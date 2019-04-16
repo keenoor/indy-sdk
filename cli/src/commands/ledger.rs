@@ -5,7 +5,7 @@ use command_executor::{Command, CommandContext, CommandMetadata, CommandParams, 
 use commands::*;
 use commands::payment_address::handle_payment_error;
 
-use libindy::ErrorCode;
+use indy::{ErrorCode, IndyError};
 use libindy::ledger::Ledger;
 use libindy::payment::Payment;
 
@@ -42,7 +42,7 @@ pub mod nym_command {
     command!(CommandMetadata::build("nym", "Send NYM transaction to the Ledger.")
                 .add_required_param("did", "DID of new identity")
                 .add_optional_param("verkey", "Verification key of new identity")
-                .add_optional_param("role", "Role of identity. One of: STEWARD, TRUSTEE, TRUST_ANCHOR or empty in case of blacklisting NYM")
+                .add_optional_param("role", "Role of identity. One of: STEWARD, TRUSTEE, TRUST_ANCHOR, NETWORK_MONITOR or empty in case of blacklisting NYM")
                 .add_optional_param("fees_inputs","The list of source inputs")
                 .add_optional_param("fees_outputs","The list of outputs in the following format: (recipient, amount)")
                 .add_optional_param("extra","Optional information for fees payment operation")
@@ -69,12 +69,12 @@ pub mod nym_command {
         let extra = get_opt_str_param("extra", params).map_err(error_err!())?;
 
         let mut request = Ledger::build_nym_request(&submitter_did, target_did, verkey, None, role)
-            .map_err(|err| handle_build_request_error(err))?;
+            .map_err(|err| handle_indy_error(err, None, None, None))?;
 
         let payment_method = set_request_fees(&mut request, wallet_handle, Some(&submitter_did), &fees_inputs, &fees_outputs, extra)?;
 
         let response_json = Ledger::sign_and_submit_request(pool_handle, wallet_handle, &submitter_did, &request)
-            .map_err(|err| handle_transaction_error(err, Some(&submitter_did), Some(&pool_name), Some(&wallet_name)))?;
+            .map_err(|err| handle_indy_error(err, Some(&submitter_did), Some(&pool_name), Some(&wallet_name)))?;
 
         let mut response: Response<serde_json::Value> = serde_json::from_str::<Response<serde_json::Value>>(&response_json)
             .map_err(|err| println_err!("Invalid data has been received: {:?}", err))?;
@@ -120,7 +120,7 @@ pub mod get_nym_command {
 
         let response = Ledger::build_get_nym_request(submitter_did.as_ref().map(String::as_str), target_did)
             .and_then(|request| Ledger::submit_request(pool_handle, &request))
-            .map_err(|err| handle_transaction_error(err, None, None, None))?;
+            .map_err(|err| handle_indy_error(err, None, None, None))?;
 
         let mut response = serde_json::from_str::<Response<serde_json::Value>>(&response)
             .map_err(|err| println_err!("Invalid data has been received: {:?}", err))?;
@@ -183,12 +183,12 @@ pub mod attrib_command {
         let extra = get_opt_str_param("extra", params).map_err(error_err!())?;
 
         let mut request = Ledger::build_attrib_request(&submitter_did, target_did, hash, raw, enc)
-            .map_err(|err| handle_build_request_error(err))?;
+            .map_err(|err| handle_indy_error(err, None, None, None))?;
 
         let payment_method = set_request_fees(&mut request, wallet_handle, Some(&submitter_did), &fees_inputs, &fees_outputs, extra)?;
 
         let response_json = Ledger::sign_and_submit_request(pool_handle, wallet_handle, &submitter_did, &request)
-            .map_err(|err| handle_transaction_error(err, Some(&submitter_did), Some(&pool_name), Some(&wallet_name)))?;
+            .map_err(|err| handle_indy_error(err, Some(&submitter_did), Some(&pool_name), Some(&wallet_name)))?;
 
         let response = serde_json::from_str::<Response<serde_json::Value>>(&response_json)
             .map_err(|err| println_err!("Invalid data has been received: {:?}", err))?;
@@ -242,7 +242,7 @@ pub mod get_attrib_command {
 
         let response = Ledger::build_get_attrib_request(submitter_did.as_ref().map(String::as_str), target_did, raw, hash, enc)
             .and_then(|request| Ledger::submit_request(pool_handle, &request))
-            .map_err(|err| handle_transaction_error(err, None, None, None))?;
+            .map_err(|err| handle_indy_error(err, None, None, None))?;
 
         let mut response = serde_json::from_str::<Response<serde_json::Value>>(&response)
             .map_err(|err| println_err!("Invalid data has been received: {:?}", err))?;
@@ -271,7 +271,7 @@ pub mod schema_command {
     command!(CommandMetadata::build("schema", "Send Schema transaction to the Ledger.")
                 .add_required_param("name", "Schema name")
                 .add_required_param("version", "Schema version")
-                .add_required_param("attr_names", "Schema attributes split by comma")
+                .add_required_param("attr_names", "Schema attributes split by comma (the number of attributes should be less or equal than 125)")
                 .add_optional_param("fees_inputs","The list of source inputs")
                 .add_optional_param("fees_outputs","The list of outputs in the following format: (recipient, amount)")
                 .add_optional_param("extra","Optional information for fees payment operation")
@@ -307,12 +307,12 @@ pub mod schema_command {
         };
 
         let mut request = Ledger::build_schema_request(&submitter_did, &schema_data)
-            .map_err(|err| handle_build_request_error(err))?;
+            .map_err(|err| handle_indy_error(err, None, None, None))?;
 
         let payment_method = set_request_fees(&mut request, wallet_handle, Some(&submitter_did), &fees_inputs, &fees_outputs, extra)?;
 
         let response_json = Ledger::sign_and_submit_request(pool_handle, wallet_handle, &submitter_did, &request)
-            .map_err(|err| handle_transaction_error(err, Some(&submitter_did), Some(&pool_name), Some(&wallet_name)))?;
+            .map_err(|err| handle_indy_error(err, Some(&submitter_did), Some(&pool_name), Some(&wallet_name)))?;
 
         let response = serde_json::from_str::<Response<serde_json::Value>>(&response_json)
             .map_err(|err| println_err!("Invalid data has been received: {:?}", err))?;
@@ -357,19 +357,14 @@ pub mod get_validator_info_command {
         let timeout = get_opt_number_param::<i32>("timeout", params).map_err(error_err!())?;
 
         let request = Ledger::build_get_validator_info_request(&submitter_did)
-            .map_err(|err| handle_transaction_error(err, None, None, None))?;
+            .map_err(|err| handle_indy_error(err, None, None, None))?;
 
         let response = if nodes.is_some() || timeout.is_some() {
             sign_and_submit_action(wallet_handle, pool_handle, &submitter_did, &request, nodes, timeout)
-                .map_err(|err| {
-                    match err {
-                        ErrorCode::CommonInvalidStructure => println_err!("Unknown node present in list"),
-                        _ => handle_transaction_error(err, None, None, None)
-                    }
-                })?
+                .map_err(|err| handle_indy_error(err, None, None, None))?
         } else {
             Ledger::sign_and_submit_request(pool_handle, wallet_handle, &submitter_did, &request)
-                .map_err(|err| handle_transaction_error(err, None, None, None))?
+                .map_err(|err| handle_indy_error(err, None, None, None))?
         };
 
         let responses = match serde_json::from_str::<BTreeMap<String, String>>(&response) {
@@ -438,7 +433,7 @@ pub mod get_schema_command {
 
         let response = Ledger::build_get_schema_request(submitter_did.as_ref().map(String::as_str), &id)
             .and_then(|request| Ledger::submit_request(pool_handle, &request))
-            .map_err(|err| handle_transaction_error(err, None, None, None))?;
+            .map_err(|err| handle_indy_error(err, None, None, None))?;
 
         let response = serde_json::from_str::<Response<serde_json::Value>>(&response)
             .map_err(|err| println_err!("Invalid data has been received: {:?}", err))?;
@@ -514,12 +509,12 @@ pub mod cred_def_command {
         };
 
         let mut request = Ledger::build_cred_def_request(&submitter_did, &cred_def_data)
-            .map_err(|err| handle_build_request_error(err))?;
+            .map_err(|err| handle_indy_error(err, None, None, None))?;
 
         let payment_method = set_request_fees(&mut request, wallet_handle, Some(&submitter_did), &fees_inputs, &fees_outputs, extra)?;
 
         let response_json = Ledger::sign_and_submit_request(pool_handle, wallet_handle, &submitter_did, &request)
-            .map_err(|err| handle_transaction_error(err, Some(&submitter_did), Some(&pool_name), Some(&wallet_name)))?;
+            .map_err(|err| handle_indy_error(err, Some(&submitter_did), Some(&pool_name), Some(&wallet_name)))?;
 
         let response = serde_json::from_str::<Response<serde_json::Value>>(&response_json)
             .map_err(|err| println_err!("Invalid data has been received: {:?}", err))?;
@@ -567,7 +562,7 @@ pub mod get_cred_def_command {
 
         let response = Ledger::build_get_cred_def_request(submitter_did.as_ref().map(String::as_str), &id)
             .and_then(|request| Ledger::submit_request(pool_handle, &request))
-            .map_err(|err| handle_transaction_error(err, None, None, None))?;
+            .map_err(|err| handle_indy_error(err, None, None, None))?;
 
         let response = serde_json::from_str::<Response<serde_json::Value>>(&response)
             .map_err(|err| println_err!("Invalid data has been received: {:?}", err))?;
@@ -600,9 +595,9 @@ pub mod node_command {
                 .add_optional_param("client_ip", "Client Ip. Note that it is mandatory for adding node case")
                 .add_optional_param("client_port","Client port. Note that it is mandatory for adding node case")
                 .add_optional_param("blskey",  "Node BLS key")
-                .add_optional_param("blskey_pop",  "Node BLS key proof of possession")
+                .add_optional_param("blskey_pop",  "Node BLS key proof of possession. Note that it is mandatory if blskey specified")
                 .add_optional_param("services", "Node type. One of: VALIDATOR, OBSERVER or empty in case of blacklisting node")
-                .add_example("ledger node target=A5iWQVT3k8Zo9nXj4otmeqaUziPQPCiDqcydXkAJBk1Y node_ip=127.0.0.1 node_port=9710 client_ip=127.0.0.1 client_port=9711 alias=Node5 services=VALIDATOR blskey=2zN3bHM1m4rLz54MJHYSwvqzPchYp8jkHswveCLAEJVcX6Mm1wHQD1SkPYMzUDTZvWvhuE6VNAkK3KxVeEmsanSmvjVkReDeBEMxeDaayjcZjFGPydyey1qxBHmTvAnBKoPydvuTAqx5f7YNNRAdeLmUi99gERUU7TD8KfAa6MpQ9bw")
+                .add_example("ledger node target=A5iWQVT3k8Zo9nXj4otmeqaUziPQPCiDqcydXkAJBk1Y node_ip=127.0.0.1 node_port=9710 client_ip=127.0.0.1 client_port=9711 alias=Node5 services=VALIDATOR blskey=2zN3bHM1m4rLz54MJHYSwvqzPchYp8jkHswveCLAEJVcX6Mm1wHQD1SkPYMzUDTZvWvhuE6VNAkK3KxVeEmsanSmvjVkReDeBEMxeDaayjcZjFGPydyey1qxBHmTvAnBKoPydvuTAqx5f7YNNRAdeLmUi99gERUU7TD8KfAa6MpQ9bw blskey_pop=RPLagxaR5xdimFzwmzYnz4ZhWtYQEj8iR5ZU53T2gitPCyCHQneUn2Huc4oeLd2B2HzkGnjAff4hWTJT6C7qHYB1Mv2wU5iHHGFWkhnTX9WsEAbunJCV2qcaXScKj4tTfvdDKfLiVuU2av6hbsMztirRze7LvYBkRHV3tGwyCptsrP")
                 .add_example("ledger node target=A5iWQVT3k8Zo9nXj4otmeqaUziPQPCiDqcydXkAJBk1Y node_ip=127.0.0.1 node_port=9710 client_ip=127.0.0.1 client_port=9711 alias=Node5 services=VALIDATOR")
                 .add_example("ledger node target=A5iWQVT3k8Zo9nXj4otmeqaUziPQPCiDqcydXkAJBk1Y alias=Node5 services=VALIDATOR")
                 .add_example("ledger node target=A5iWQVT3k8Zo9nXj4otmeqaUziPQPCiDqcydXkAJBk1Y alias=Node5 services=")
@@ -641,7 +636,7 @@ pub mod node_command {
 
         let response = Ledger::build_node_request(&submitter_did, target_did, &node_data)
             .and_then(|request| Ledger::sign_and_submit_request(pool_handle, wallet_handle, &submitter_did, &request))
-            .map_err(|err| handle_transaction_error(err, Some(&submitter_did), Some(&pool_name), Some(&wallet_name)))?;
+            .map_err(|err| handle_indy_error(err, Some(&submitter_did), Some(&pool_name), Some(&wallet_name)))?;
 
         let response = serde_json::from_str::<Response<serde_json::Value>>(&response)
             .map_err(|err| println_err!("Invalid data has been received: {:?}", err))?;
@@ -686,7 +681,7 @@ pub mod pool_config_command {
 
         let response = Ledger::indy_build_pool_config_request(&submitter_did, writes, force)
             .and_then(|request| Ledger::sign_and_submit_request(pool_handle, wallet_handle, &submitter_did, &request))
-            .map_err(|err| handle_transaction_error(err, Some(&submitter_did), Some(&pool_name), Some(&wallet_name)))?;
+            .map_err(|err| handle_indy_error(err, Some(&submitter_did), Some(&pool_name), Some(&wallet_name)))?;
 
         let response = serde_json::from_str::<Response<serde_json::Value>>(&response)
             .map_err(|err| println_err!("Invalid data has been received: {:?}", err))?;
@@ -730,14 +725,14 @@ pub mod pool_restart_command {
         let timeout = get_opt_number_param::<i32>("timeout", params).map_err(error_err!())?;
 
         let request = Ledger::indy_build_pool_restart_request(&submitter_did, action, datetime)
-            .map_err(|err| handle_transaction_error(err, None, Some(&pool_name), Some(&wallet_name)))?;
+            .map_err(|err| handle_indy_error(err, None, Some(&pool_name), Some(&wallet_name)))?;
 
         let response = if nodes.is_some() || timeout.is_some() {
             sign_and_submit_action(wallet_handle, pool_handle, &submitter_did, &request, nodes, timeout)
-                .map_err(|err| handle_transaction_error(err, None, None, None))?
+                .map_err(|err| handle_indy_error(err, None, None, None))?
         } else {
             Ledger::sign_and_submit_request(pool_handle, wallet_handle, &submitter_did, &request)
-                .map_err(|err| handle_transaction_error(err, None, None, None))?
+                .map_err(|err| handle_indy_error(err, None, None, None))?
         };
 
         let responses = match serde_json::from_str::<HashMap<String, String>>(&response) {
@@ -773,11 +768,11 @@ pub mod pool_restart_command {
     }
 }
 
-fn sign_and_submit_action(wallet_handle: i32, pool_handle: i32, submitter_did: &str, request: &str, nodes: Option<Vec<&str>>, timeout: Option<i32>) -> Result<String, ErrorCode> {
+fn sign_and_submit_action(wallet_handle: i32, pool_handle: i32, submitter_did: &str, request: &str, nodes: Option<Vec<&str>>, timeout: Option<i32>) -> Result<String, IndyError> {
     let nodes = match nodes {
         Some(n) =>
             Some(serde_json::to_string(&n)
-                .map_err(|_| ErrorCode::CommonInvalidState)?),
+                .map_err(|err| IndyError { error_code: ErrorCode::CommonInvalidStructure, message: err.to_string(), indy_backtrace: None })?),
         None => None
     };
 
@@ -830,7 +825,7 @@ pub mod pool_upgrade_command {
         let response = Ledger::indy_build_pool_upgrade_request(&submitter_did, name, version, action, sha256,
                                                                timeout, schedule, justification, reinstall, force, package)
             .and_then(|request| Ledger::sign_and_submit_request(pool_handle, wallet_handle, &submitter_did, &request))
-            .map_err(|err| handle_transaction_error(err, Some(&submitter_did), Some(&pool_name), Some(&wallet_name)))?;
+            .map_err(|err| handle_indy_error(err, Some(&submitter_did), Some(&pool_name), Some(&wallet_name)))?;
 
         let response = serde_json::from_str::<Response<serde_json::Value>>(&response)
             .map_err(|err| println_err!("Invalid data has been received: {:?}", err))?;
@@ -907,7 +902,7 @@ pub mod custom_command {
         };
 
         let response_json =
-            response.map_err(|err| handle_transaction_error(err, Some(&submitter), Some(&pool_name), Some(&wallet)))?;
+            response.map_err(|err| handle_indy_error(err, Some(&submitter), Some(&pool_name), Some(&wallet)))?;
 
         let response = serde_json::from_str::<Response<serde_json::Value>>(&response_json)
             .map_err(|err| println_err!("Invalid data has been received: {:?}", err))?;
@@ -948,7 +943,7 @@ pub mod get_payment_sources_command {
             .map_err(|err| handle_payment_error(err, None))?;
 
         let response = Ledger::submit_request(pool_handle, &request)
-            .map_err(|err| handle_transaction_error(err, None, Some(&pool_name), Some(&wallet_name)))?;
+            .map_err(|err| handle_indy_error(err, None, Some(&pool_name), Some(&wallet_name)))?;
 
         let res = match Payment::parse_get_payment_sources_response(&payment_method, &response) {
             Ok(sources_json) => {
@@ -1002,7 +997,7 @@ pub mod payment_command {
             .map_err(|err| handle_payment_error(err, None))?;
 
         let response = Ledger::submit_request(pool_handle, &request)
-            .map_err(|err| handle_transaction_error(err, None, Some(&pool_name), Some(&wallet_name)))?;
+            .map_err(|err| handle_indy_error(err, None, Some(&pool_name), Some(&wallet_name)))?;
 
         let res = match Payment::parse_payment_response(&payment_method, &response) {
             Ok(receipts_json) => {
@@ -1047,7 +1042,7 @@ pub mod get_fees_command {
             .map_err(|err| handle_payment_error(err, Some(payment_method)))?;
 
         let response = Ledger::submit_request(pool_handle, &request)
-            .map_err(|err| handle_transaction_error(err, None, Some(&pool_name), Some(&wallet_name)))?;
+            .map_err(|err| handle_indy_error(err, None, Some(&pool_name), Some(&wallet_name)))?;
 
         let res = match Payment::parse_get_txn_fees_response(&payment_method, &response) {
             Ok(fees_json) => {
@@ -1071,7 +1066,7 @@ pub mod get_fees_command {
 
                 Ok(())
             }
-            Err(err) => Err(println_err!("Invalid data has been received: {:?}", err)),
+            Err(err) => Err(handle_payment_error(err, None)),
         };
 
         trace!("execute << {:?}", res);
@@ -1171,7 +1166,7 @@ pub mod verify_payment_receipt_command {
             .map_err(|err| handle_payment_error(err, None))?;
 
         let response = Ledger::submit_request(pool_handle, &request)
-            .map_err(|err| handle_transaction_error(err, None, Some(&pool_name), Some(&wallet_name)))?;
+            .map_err(|err| handle_indy_error(err, None, Some(&pool_name), Some(&wallet_name)))?;
 
         let res = match Payment::parse_verify_payment_response(&payment_method, &response) {
             Ok(info_json) => {
@@ -1199,7 +1194,7 @@ pub mod sign_multi_command {
     fn execute(ctx: &CommandContext, params: &CommandParams) -> Result<(), ()> {
         trace!("execute >> ctx {:?} params {:?}", ctx, params);
 
-        let (wallet_handle, wallet_name) = ensure_opened_wallet(&ctx)?;
+        let (wallet_handle, _) = ensure_opened_wallet(&ctx)?;
         let submitter_did = ensure_active_did(&ctx)?;
 
         let txn = get_str_param("txn", params).map_err(error_err!())?;
@@ -1210,14 +1205,163 @@ pub mod sign_multi_command {
                 println_succ!("{}", request);
                 Ok(())
             }
-            Err(ErrorCode::CommonInvalidStructure) => Err(println_err!("Invalid Transaction JSON")),
-            Err(ErrorCode::WalletInvalidHandle) => Err(println_err!("Wallet: \"{}\" not found", wallet_name)),
-            Err(ErrorCode::WalletItemNotFound) => Err(println_err!("Signer DID: \"{}\" not found", submitter_did)),
-            Err(err) => Err(println_err!("Indy SDK error occurred {:?}", err))
+            Err(err) => {
+                match err.error_code {
+                    ErrorCode::WalletItemNotFound => Err(println_err!("Signer DID: \"{}\" not found", submitter_did)),
+                    _ => Err(handle_indy_error(err, Some(&submitter_did), None, None)),
+                }
+            }
         };
 
         trace!("execute << {:?}", res);
         res
+    }
+}
+
+pub mod auth_rule_command {
+    use super::*;
+
+    command!(CommandMetadata::build("auth-rule", "Send AUTH_RULE request to change authentication rules for a ledger transaction.")
+                .add_required_param("txn_type", "Ledger transaction alias or associated value")
+                .add_required_param("action", "Type of an action. One of: ADD, EDIT")
+                .add_required_param("field", "Transaction field")
+                .add_optional_param("old_value", "Old value of field, which can be changed to a new_value (mandatory for EDIT action)")
+                .add_required_param("new_value", "New value that can be used to fill the field")
+                .add_required_param("constraint", r#"Set of constraints required for execution of an action
+         {
+             constraint_id - type of a constraint. Can be either "ROLE" to specify final constraint or  "AND"/"OR" to combine constraints.
+             role - role associated value {TRUSTEE: 0, STEWARD: 2, TRUST_ANCHOR: 101, NETWORK_MONITOR: 201, ANY: *}.
+             sig_count - the number of signatures required to execution action.
+             need_to_be_owner - if user must be an owner of transaction.
+             metadata - additional parameters of the constraint.
+         }
+         can be combined by
+         {
+             constraint_id: <"AND" or "OR">
+             auth_constraints: [<constraint_1>, <constraint_2>]
+         }
+                "#)
+                .add_example(r#"ledger auth-rule txn_type=NYM action=ADD field=role new_value=101 constraint="{"sig_count":1,"role":"0","constraint_id":"ROLE","need_to_be_owner":false}""#)
+                .add_example(r#"ledger auth-rule txn_type=NYM action=EDIT field=role old_value=101 new_value=0 constraint="{"sig_count":1,"role":"0","constraint_id":"ROLE","need_to_be_owner":false}""#)
+                .finalize()
+    );
+
+    fn execute(ctx: &CommandContext, params: &CommandParams) -> Result<(), ()> {
+        trace!("execute >> ctx {:?} params {:?}", ctx, params);
+
+        let (pool_handle, pool_name) = ensure_connected_pool(&ctx)?;
+        let (wallet_handle, wallet_name) = ensure_opened_wallet(&ctx)?;
+        let submitter_did = ensure_active_did(&ctx)?;
+
+        let txn_type = get_str_param("txn_type", params).map_err(error_err!())?;
+        let action = get_str_param("action", params).map_err(error_err!())?;
+        let field = get_str_param("field", params).map_err(error_err!())?;
+        let old_value = get_opt_str_param("old_value", params).map_err(error_err!())?;
+        let new_value = get_str_param("new_value", params).map_err(error_err!())?;
+        let constraint = get_str_param("constraint", params).map_err(error_err!())?;
+
+        let request = Ledger::build_auth_rule_request(&submitter_did, txn_type, &action.to_uppercase(), field, old_value, new_value, constraint)
+            .map_err(|err| handle_indy_error(err, None, None, None))?;
+
+        let response_json = Ledger::sign_and_submit_request(pool_handle, wallet_handle, &submitter_did, &request)
+            .map_err(|err| handle_indy_error(err, Some(&submitter_did), Some(&pool_name), Some(&wallet_name)))?;
+
+        let mut response: Response<serde_json::Value> = serde_json::from_str::<Response<serde_json::Value>>(&response_json)
+            .map_err(|err| println_err!("Invalid data has been received: {:?}", err))?;
+
+        if let Some(result) = response.result.as_mut() {
+            result["txn"]["data"]["auth_type"] = get_txn_title(&result["txn"]["data"]["auth_type"]);
+            result["txn"]["data"]["constraint"] = serde_json::Value::String(::serde_json::to_string_pretty(&result["txn"]["data"]["constraint"]).unwrap());
+        }
+
+        let res = handle_transaction_response(response)
+            .map(|result| print_transaction_response(result,
+                                                     "Auth Rule request has been sent to Ledger.",
+                                                     None,
+                                                     &mut vec![("auth_type", "Txn Type"),
+                                                               ("auth_action", "Action"),
+                                                               ("field", "Field"),
+                                                               ("old_value", "Old Value"),
+                                                               ("new_value", "New Value"),
+                                                               ("constraint", "Constraint")]))?;
+
+        trace!("execute << {:?}", res);
+        Ok(res)
+    }
+}
+
+pub mod get_auth_rule_command {
+    use super::*;
+
+    command!(CommandMetadata::build("get-auth-rule", r#"Send GET_AUTH_RULE request to get authentication rules for ledger transactions.
+        Note: Either none or all parameters must be specified (`old_value` can be skipped for `ADD` action)."#)
+                .add_required_param("txn_type", "Ledger transaction alias or associated value.")
+                .add_required_param("action", "Type of action for. One of: ADD, EDIT")
+                .add_required_param("field", "Transaction field")
+                .add_optional_param("old_value", "Old value of field, which can be changed to a new_value (mandatory for EDIT action)")
+                .add_required_param("new_value", "New value that can be used to fill the field")
+                .add_example(r#"ledger get-auth-rule txn_type=NYM action=ADD field=role new_value=101"#)
+                .add_example(r#"ledger get-auth-rule txn_type=NYM action=EDIT field=role old_value=101 new_value=0"#)
+                .add_example(r#"ledger get-auth-rule"#)
+                .finalize()
+    );
+
+    fn execute(ctx: &CommandContext, params: &CommandParams) -> Result<(), ()> {
+        trace!("execute >> ctx {:?} params {:?}", ctx, params);
+
+        let (pool_handle, pool_name) = ensure_connected_pool(&ctx)?;
+        let (_, wallet_name) = ensure_opened_wallet(&ctx)?;
+        let submitter_did = get_active_did(&ctx);
+
+        let auth_type = get_opt_str_param("txn_type", params).map_err(error_err!())?;
+        let auth_action = get_opt_str_param("action", params).map_err(error_err!())?;
+        let field = get_opt_str_param("field", params).map_err(error_err!())?;
+        let old_value = get_opt_str_param("old_value", params).map_err(error_err!())?;
+        let new_value = get_opt_str_param("new_value", params).map_err(error_err!())?;
+
+        let request = Ledger::build_get_auth_rule_request(submitter_did.as_ref().map(String::as_str), auth_type, auth_action, field, old_value, new_value)
+            .map_err(|err| handle_indy_error(err, None, None, None))?;
+
+        let response_json = Ledger::submit_request(pool_handle, &request)
+            .map_err(|err| handle_indy_error(err, submitter_did.as_ref().map(String::as_str), Some(&pool_name), Some(&wallet_name)))?;
+
+        let response: Response<serde_json::Value> = serde_json::from_str::<Response<serde_json::Value>>(&response_json)
+            .map_err(|err| println_err!("Invalid data has been received: {:?}", err))?;
+
+        let result = handle_transaction_response(response)?;
+
+        let rules = match result["data"].as_object() {
+            Some(r) => r,
+            None => return Err(println_err!("Invalid data has been received"))
+        };
+
+        let constraints = rules
+            .iter()
+            .map(|(constraint_id, constraint)| {
+                let parts: Vec<&str> = constraint_id.split("--").collect();
+
+                json!({
+                    "auth_type": get_txn_title(&serde_json::Value::String(parts.get(1).cloned().unwrap_or("-").to_string())),
+                    "auth_action": parts.get(0),
+                    "field": parts.get(2),
+                    "old_value": parts.get(3),
+                    "new_value": parts.get(4),
+                    "constraint": ::serde_json::to_string_pretty(&constraint).unwrap(),
+                })
+            })
+            .collect::<Vec<serde_json::Value>>();
+
+        let res = print_list_table(&constraints,
+                                   &vec![("auth_type", "Type"),
+                                         ("auth_action", "Action"),
+                                         ("field", "Field"),
+                                         ("old_value", "Old Value"),
+                                         ("new_value", "New Value"),
+                                         ("constraint", "Constraint")],
+                                   "There are no rules set");
+
+        trace!("execute << {:?}", res);
+        Ok(res)
     }
 }
 
@@ -1398,26 +1542,6 @@ pub fn handle_transaction_response(response: Response<serde_json::Value>) -> Res
     }
 }
 
-pub fn handle_build_request_error(err: ErrorCode) {
-    match err {
-        ErrorCode::CommonInvalidStructure => println_err!("Invalid format of command params. Please check format of posted JSONs, Keys, DIDs and etc..."),
-        err => println_err!("Indy SDK error occurred {:?}", err)
-    }
-}
-
-pub fn handle_transaction_error(err: ErrorCode, submitter_did: Option<&str>, pool_name: Option<&str>, wallet_name: Option<&str>) {
-    match err {
-        ErrorCode::CommonInvalidStructure => println_err!("Invalid format of command params. Please check format of posted JSONs, Keys, DIDs and etc..."),
-        ErrorCode::PoolLedgerInvalidPoolHandle => println_err!("Pool: \"{}\" not found", pool_name.unwrap_or("")),
-        ErrorCode::WalletInvalidHandle => println_err!("Wallet: \"{}\" not found", wallet_name.unwrap_or("")),
-        ErrorCode::WalletItemNotFound => println_err!("Submitter DID: \"{}\" not found", submitter_did.unwrap_or("")),
-        ErrorCode::WalletIncompatiblePoolError =>
-            println_err!("Wallet \"{}\" is incompatible with pool \"{}\".", wallet_name.unwrap_or(""), pool_name.unwrap_or("")),
-        ErrorCode::PoolLedgerTimeout => println_err!("Transaction response has not been received"),
-        err => println_err!("Indy SDK error occurred {:?}", err)
-    }
-}
-
 fn extract_error_message(error: &str) -> String {
     let re = Regex::new(r#"\(["'](.*)["'],\)"#).unwrap();
     match re.captures(error) {
@@ -1431,6 +1555,34 @@ fn get_role_title(role: &serde_json::Value) -> serde_json::Value {
         Some("0") => "TRUSTEE",
         Some("2") => "STEWARD",
         Some("101") => "TRUST_ANCHOR",
+        Some("201") => "NETWORK_MONITOR",
+        _ => "-"
+    }.to_string())
+}
+
+fn get_txn_title(role: &serde_json::Value) -> serde_json::Value {
+    serde_json::Value::String(match role.as_str() {
+        Some("0") => "NODE",
+        Some("1") => "NYM",
+        Some("3") => "GET_TXN",
+        Some("100") => "ATTRIB",
+        Some("101") => "SCHEMA",
+        Some("104") => "GET_ATTR",
+        Some("105") => "GET_NYM",
+        Some("107") => "GET_SCHEMA",
+        Some("108") => "GET_CRED_DEF",
+        Some("102") => "CRED_DEF",
+        Some("109") => "POOL_UPGRADE",
+        Some("111") => "POOL_CONFIG",
+        Some("113") => "REVOC_REG_DEF",
+        Some("114") => "REVOC_REG_ENTRY",
+        Some("115") => "GET_REVOC_REG_DEF",
+        Some("116") => "GET_REVOC_REG",
+        Some("117") => "GET_REVOC_REG_DELTA",
+        Some("118") => "POOL_RESTART",
+        Some("119") => "GET_VALIDATOR_INFO",
+        Some("120") => "AUTH_RULE",
+        Some(val) => val,
         _ => "-"
     }.to_string())
 }
@@ -1465,10 +1617,9 @@ pub struct ReplyResult<T> {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use utils::test::TestUtils;
     use commands::wallet::tests::{create_and_open_wallet, close_and_delete_wallet, open_wallet, close_wallet};
-    use commands::pool::tests::{create_and_connect_pool, disconnect_and_delete_pool};
-    use commands::did::tests::{new_did, use_did, SEED_TRUSTEE, DID_TRUSTEE, SEED_MY1, DID_MY1, VERKEY_MY1, SEED_MY3, DID_MY3, VERKEY_MY3};
+    use commands::pool::tests::disconnect_and_delete_pool;
+    use commands::did::tests::{new_did, use_did, SEED_TRUSTEE, DID_TRUSTEE, DID_MY1, VERKEY_MY1, SEED_MY3, DID_MY3, VERKEY_MY3};
     #[cfg(feature = "nullpay_plugin")]
     use commands::common::tests::{load_null_payment_plugin, NULL_PAYMENT_METHOD};
     #[cfg(feature = "nullpay_plugin")]
@@ -1510,170 +1661,124 @@ pub mod tests {
 
         #[test]
         pub fn nym_works() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
+            let (did, verkey) = create_new_did(&ctx);
             {
                 let cmd = nym_command::new();
                 let mut params = CommandParams::new();
-                params.insert("did", DID_MY1.to_string());
-                params.insert("verkey", VERKEY_MY1.to_string());
+                params.insert("did", did.clone());
+                params.insert("verkey", verkey);
                 cmd.execute(&ctx, &params).unwrap();
             }
-            _ensure_nym_added(&ctx, DID_MY1);
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            _ensure_nym_added(&ctx, &did);
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn nym_works_for_role() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
+            let (did, verkey) = create_new_did(&ctx);
             {
                 let cmd = nym_command::new();
                 let mut params = CommandParams::new();
-                params.insert("did", DID_MY1.to_string());
-                params.insert("verkey", VERKEY_MY1.to_string());
+                params.insert("did", did.clone());
+                params.insert("verkey", verkey);
                 params.insert("role", "TRUSTEE".to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            _ensure_nym_added(&ctx, DID_MY1);
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            _ensure_nym_added(&ctx, &did);
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         #[cfg(feature = "nullpay_plugin")]
         pub fn nym_works_for_set_fees() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
-
-            load_null_payment_plugin(&ctx);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             set_fees(&ctx, FEES);
             let payment_address_from = create_address_and_mint_sources(&ctx);
             let input = get_source_input(&ctx, &payment_address_from);
+
+            let (did, verkey) = create_new_did(&ctx);
             {
                 let cmd = nym_command::new();
                 let mut params = CommandParams::new();
-                params.insert("did", DID_MY1.to_string());
-                params.insert("verkey", VERKEY_MY1.to_string());
+                params.insert("did", did.clone());
+                params.insert("verkey", verkey);
                 params.insert("fees_inputs", input);
                 params.insert("fees_outputs", OUTPUT.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            _ensure_nym_added(&ctx, DID_MY1);
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            _ensure_nym_added(&ctx, &did);
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         #[cfg(feature = "nullpay_plugin")]
         pub fn nym_works_for_set_fees_with_input_amount_lower_fee() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
-
-            load_null_payment_plugin(&ctx);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             let payment_address_from = create_address_and_mint_sources(&ctx);
             let input = get_source_input(&ctx, &payment_address_from);
             set_fees(&ctx, "1:101");
+
+            let (did, verkey) = create_new_did(&ctx);
             {
                 let cmd = nym_command::new();
                 let mut params = CommandParams::new();
-                params.insert("did", DID_MY1.to_string());
-                params.insert("verkey", VERKEY_MY1.to_string());
+                params.insert("did", did.clone());
+                params.insert("verkey", verkey);
                 params.insert("fees_inputs", input);
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
 
         #[test]
         #[cfg(feature = "nullpay_plugin")]
         pub fn nym_works_for_set_fees_with_input_amount_lower_fee_plus_output() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
-
-            load_null_payment_plugin(&ctx);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             let payment_address_from = create_address_and_mint_sources(&ctx);
             let input = get_source_input(&ctx, &payment_address_from);
             set_fees(&ctx, "1:95");
+
+            let (did, verkey) = create_new_did(&ctx);
             {
                 let cmd = nym_command::new();
                 let mut params = CommandParams::new();
-                params.insert("did", DID_MY1.to_string());
-                params.insert("verkey", VERKEY_MY1.to_string());
+                params.insert("did", did.clone());
+                params.insert("verkey", verkey);
                 params.insert("fees_inputs", input);
                 params.insert("fees_outputs", OUTPUT.to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn nym_works_for_wrong_role() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
 
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let (did, verkey) = create_new_did(&ctx);
             {
                 let cmd = nym_command::new();
                 let mut params = CommandParams::new();
-                params.insert("did", DID_MY1.to_string());
-                params.insert("verkey", VERKEY_MY1.to_string());
+                params.insert("did", did.clone());
+                params.insert("verkey", verkey);
                 params.insert("role", "ROLE".to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn nym_works_for_no_active_did() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
+            let ctx = setup_with_wallet_and_pool();
             {
                 let cmd = nym_command::new();
                 let mut params = CommandParams::new();
@@ -1681,21 +1786,13 @@ pub mod tests {
                 params.insert("verkey", VERKEY_MY1.to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn nym_works_for_no_opened_wallet() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
 
             close_and_delete_wallet(&ctx);
             {
@@ -1706,19 +1803,13 @@ pub mod tests {
                 cmd.execute(&ctx, &params).unwrap_err();
             }
             disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down();
         }
 
         #[test]
         pub fn nym_works_for_no_connected_pool() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
 
             disconnect_and_delete_pool(&ctx);
             {
@@ -1729,16 +1820,12 @@ pub mod tests {
                 cmd.execute(&ctx, &params).unwrap_err();
             }
             close_and_delete_wallet(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down();
         }
 
         #[test]
         pub fn nym_works_for_unknown_submitter() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
+            let ctx = setup_with_wallet_and_pool();
 
             new_did(&ctx, SEED_MY3);
             use_did(&ctx, DID_MY3);
@@ -1749,9 +1836,7 @@ pub mod tests {
                 params.insert("verkey", VERKEY_MY3.to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
     }
 
@@ -1760,67 +1845,40 @@ pub mod tests {
 
         #[test]
         pub fn get_nym_works() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
-            send_nym_my1(&ctx);
-            _ensure_nym_added(&ctx, DID_MY1);
-            {
-                let cmd = get_nym_command::new();
-                let mut params = CommandParams::new();
-                params.insert("did", DID_MY1.to_string());
-                cmd.execute(&ctx, &params).unwrap();
-            }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
-        }
-
-        #[test]
-        pub fn get_nym_works_for_no_active_did() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            _ensure_nym_added(&ctx, DID_MY1);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
             {
                 let cmd = get_nym_command::new();
                 let mut params = CommandParams::new();
                 params.insert("did", DID_TRUSTEE.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
+        }
+
+        #[test]
+        pub fn get_nym_works_for_no_active_did() {
+            let ctx = setup_with_wallet_and_pool();
+            {
+                let cmd = get_nym_command::new();
+                let mut params = CommandParams::new();
+                params.insert("did", DID_TRUSTEE.to_string());
+                cmd.execute(&ctx, &params).unwrap();
+            }
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn get_nym_works_for_unknown_did() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
-            send_nym_my1(&ctx);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
             {
                 let cmd = get_nym_command::new();
                 let mut params = CommandParams::new();
                 params.insert("did", DID_MY3.to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
     }
 
@@ -1829,127 +1887,85 @@ pub mod tests {
 
         #[test]
         pub fn attrib_works_for_raw_value() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            new_did(&ctx, SEED_MY1);
-            use_did(&ctx, DID_TRUSTEE);
-            send_nym_my1(&ctx);
-            use_did(&ctx, DID_MY1);
+            let ctx = setup_with_wallet_and_pool();
+            let (did, _) = use_new_identity(&ctx);
             {
                 let cmd = attrib_command::new();
                 let mut params = CommandParams::new();
-                params.insert("did", DID_MY1.to_string());
+                params.insert("did", did.clone());
                 params.insert("raw", ATTRIB_RAW_DATA.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            _ensure_attrib_added(&ctx, DID_MY1, Some(ATTRIB_RAW_DATA), None, None);
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            _ensure_attrib_added(&ctx, &did, Some(ATTRIB_RAW_DATA), None, None);
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn attrib_works_for_hash_value() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            new_did(&ctx, SEED_MY1);
-            use_did(&ctx, DID_TRUSTEE);
-            send_nym_my1(&ctx);
-            use_did(&ctx, DID_MY1);
-
+            let ctx = setup_with_wallet_and_pool();
+            let (did, _) = use_new_identity(&ctx);
             {
                 let cmd = attrib_command::new();
                 let mut params = CommandParams::new();
-                params.insert("did", DID_MY1.to_string());
+                params.insert("did", did.clone());
                 params.insert("hash", ATTRIB_HASH_DATA.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            _ensure_attrib_added(&ctx, DID_MY1, None, Some(ATTRIB_HASH_DATA), None);
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            _ensure_attrib_added(&ctx, &did, None, Some(ATTRIB_HASH_DATA), None);
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn attrib_works_for_enc_value() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            new_did(&ctx, SEED_MY1);
-            use_did(&ctx, DID_TRUSTEE);
-            send_nym_my1(&ctx);
-            use_did(&ctx, DID_MY1);
-
+            let ctx = setup_with_wallet_and_pool();
+            let (did, _) = use_new_identity(&ctx);
             {
                 let cmd = attrib_command::new();
                 let mut params = CommandParams::new();
-                params.insert("did", DID_MY1.to_string());
+                params.insert("did", did.clone());
                 params.insert("enc", ATTRIB_ENC_DATA.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            _ensure_attrib_added(&ctx, DID_MY1, None, None, Some(ATTRIB_ENC_DATA));
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            _ensure_attrib_added(&ctx, &did, None, None, Some(ATTRIB_ENC_DATA));
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         #[cfg(feature = "nullpay_plugin")]
         pub fn attrib_works_for_set_fees() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
 
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-            let did = crate_send_and_use_new_nym(&ctx);
-
-            load_null_payment_plugin(&ctx);
+            let (did, _) = use_new_identity(&ctx);
+            use_did(&ctx, DID_TRUSTEE);
             set_fees(&ctx, FEES);
             let payment_address_from = create_address_and_mint_sources(&ctx);
             let input = get_source_input(&ctx, &payment_address_from);
+            use_did(&ctx, &did);
             {
                 let cmd = attrib_command::new();
                 let mut params = CommandParams::new();
-                params.insert("did", did.to_string());
+                params.insert("did", did.clone());
                 params.insert("raw", ATTRIB_RAW_DATA.to_string());
                 params.insert("fees_inputs", input);
                 params.insert("fees_outputs", OUTPUT.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
             _ensure_attrib_added(&ctx, &did, Some(ATTRIB_RAW_DATA), None, None);
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         #[cfg(feature = "nullpay_plugin")]
         pub fn attrib_works_for_set_fees_input_amount_lower_fee() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
 
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-            let did = crate_send_and_use_new_nym(&ctx);
+            let (did, _) = use_new_identity(&ctx);
 
-            load_null_payment_plugin(&ctx);
+            use_did(&ctx, DID_TRUSTEE);
             set_fees(&ctx, "ATTRIB:101");
             let payment_address_from = create_address_and_mint_sources(&ctx);
             let input = get_source_input(&ctx, &payment_address_from);
+            use_did(&ctx, &did);
             {
                 let cmd = attrib_command::new();
                 let mut params = CommandParams::new();
@@ -1958,61 +1974,38 @@ pub mod tests {
                 params.insert("fees_inputs", input);
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn attrib_works_for_missed_attribute() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            new_did(&ctx, SEED_MY1);
-            use_did(&ctx, DID_TRUSTEE);
-            send_nym_my1(&ctx);
-            use_did(&ctx, DID_MY1);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
             {
                 let cmd = attrib_command::new();
                 let mut params = CommandParams::new();
-                params.insert("did", DID_MY1.to_string());
+                params.insert("did", DID_TRUSTEE.to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn attrib_works_for_no_active_did() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
+            let ctx = setup_with_wallet_and_pool();
             {
                 let cmd = attrib_command::new();
                 let mut params = CommandParams::new();
-                params.insert("did", DID_MY1.to_string());
+                params.insert("did", DID_TRUSTEE.to_string());
                 params.insert("raw", ATTRIB_RAW_DATA.to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn attrib_works_for_unknown_did() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
+            let ctx = setup_with_wallet_and_pool();
 
             new_did(&ctx, SEED_MY3);
             use_did(&ctx, DID_MY3);
@@ -2023,34 +2016,21 @@ pub mod tests {
                 params.insert("raw", ATTRIB_RAW_DATA.to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn attrib_works_for_invalid_endpoint_format() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            new_did(&ctx, SEED_MY1);
-            use_did(&ctx, DID_TRUSTEE);
-            send_nym_my1(&ctx);
-            use_did(&ctx, DID_MY1);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
             {
                 let cmd = attrib_command::new();
                 let mut params = CommandParams::new();
-                params.insert("did", DID_MY1.to_string());
+                params.insert("did", DID_TRUSTEE.to_string());
                 params.insert("raw", r#"127.0.0.1:5555"#.to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
     }
 
@@ -2059,124 +2039,82 @@ pub mod tests {
 
         #[test]
         pub fn get_attrib_works_for_raw_value() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            new_did(&ctx, SEED_MY1);
-            use_did(&ctx, DID_TRUSTEE);
-            send_nym_my1(&ctx);
-            use_did(&ctx, DID_MY1);
+            let ctx = setup_with_wallet_and_pool();
+            let (did, _) = use_new_identity(&ctx);
             {
                 let cmd = attrib_command::new();
                 let mut params = CommandParams::new();
-                params.insert("did", DID_MY1.to_string());
+                params.insert("did", did.clone());
                 params.insert("raw", ATTRIB_RAW_DATA.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            _ensure_attrib_added(&ctx, DID_MY1, Some(ATTRIB_RAW_DATA), None, None);
+            _ensure_attrib_added(&ctx, &did, Some(ATTRIB_RAW_DATA), None, None);
             {
                 let cmd = get_attrib_command::new();
                 let mut params = CommandParams::new();
-                params.insert("did", DID_MY1.to_string());
+                params.insert("did", did.clone());
                 params.insert("raw", "endpoint".to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn get_attrib_works_for_hash_value() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            new_did(&ctx, SEED_MY1);
-            use_did(&ctx, DID_TRUSTEE);
-            send_nym_my1(&ctx);
-            use_did(&ctx, DID_MY1);
+            let ctx = setup_with_wallet_and_pool();
+            let (did, _) = use_new_identity(&ctx);
             {
                 let cmd = attrib_command::new();
                 let mut params = CommandParams::new();
-                params.insert("did", DID_MY1.to_string());
+                params.insert("did", did.clone());
                 params.insert("hash", ATTRIB_HASH_DATA.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            _ensure_attrib_added(&ctx, DID_MY1, None, Some(ATTRIB_HASH_DATA), None);
+            _ensure_attrib_added(&ctx, &did, None, Some(ATTRIB_HASH_DATA), None);
             {
                 let cmd = get_attrib_command::new();
                 let mut params = CommandParams::new();
-                params.insert("did", DID_MY1.to_string());
+                params.insert("did", did.clone());
                 params.insert("hash", ATTRIB_HASH_DATA.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn get_attrib_works_for_enc_value() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            new_did(&ctx, SEED_MY1);
-            use_did(&ctx, DID_TRUSTEE);
-            send_nym_my1(&ctx);
-            use_did(&ctx, DID_MY1);
+            let ctx = setup_with_wallet_and_pool();
+            let (did, _) = use_new_identity(&ctx);
             {
                 let cmd = attrib_command::new();
                 let mut params = CommandParams::new();
-                params.insert("did", DID_MY1.to_string());
+                params.insert("did", did.clone());
                 params.insert("enc", ATTRIB_ENC_DATA.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            _ensure_attrib_added(&ctx, DID_MY1, None, None, Some(ATTRIB_ENC_DATA));
+            _ensure_attrib_added(&ctx, &did, None, None, Some(ATTRIB_ENC_DATA));
             {
                 let cmd = get_attrib_command::new();
                 let mut params = CommandParams::new();
-                params.insert("did", DID_MY1.to_string());
+                params.insert("did", did.clone());
                 params.insert("enc", ATTRIB_ENC_DATA.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn get_attrib_works_for_no_active_did() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            new_did(&ctx, SEED_MY1);
-            use_did(&ctx, DID_TRUSTEE);
-            send_nym_my1(&ctx);
-            use_did(&ctx, DID_MY1);
+            let ctx = setup_with_wallet_and_pool();
+            let (did, _) = use_new_identity(&ctx);
             {
                 let cmd = attrib_command::new();
                 let mut params = CommandParams::new();
-                params.insert("did", DID_MY1.to_string());
+                params.insert("did", did.clone());
                 params.insert("raw", ATTRIB_RAW_DATA.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            _ensure_attrib_added(&ctx, DID_MY1, Some(ATTRIB_RAW_DATA), None, None);
+            _ensure_attrib_added(&ctx, &did, Some(ATTRIB_RAW_DATA), None, None);
 
             // to reset active did
             close_wallet(&ctx);
@@ -2185,13 +2123,11 @@ pub mod tests {
             {
                 let cmd = get_attrib_command::new();
                 let mut params = CommandParams::new();
-                params.insert("did", DID_MY1.to_string());
+                params.insert("did", did.clone());
                 params.insert("raw", "endpoint".to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
     }
 
@@ -2200,13 +2136,8 @@ pub mod tests {
 
         #[test]
         pub fn schema_works() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            let did = crate_send_and_use_new_nym(&ctx);
+            let ctx = setup_with_wallet_and_pool();
+            let (did, _) = use_new_identity(&ctx);
             {
                 let cmd = schema_command::new();
                 let mut params = CommandParams::new();
@@ -2216,23 +2147,16 @@ pub mod tests {
                 cmd.execute(&ctx, &params).unwrap();
             }
             _ensure_schema_added(&ctx, &did);
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         #[cfg(feature = "nullpay_plugin")]
         pub fn schema_works_for_set_fees() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            let (did, _) = use_new_identity(&ctx);
 
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-            let did = crate_send_and_use_new_nym(&ctx);
-            load_null_payment_plugin(&ctx);
             set_fees(&ctx, FEES);
-
             let payment_address_from = create_address_and_mint_sources(&ctx);
             let input = get_source_input(&ctx, &payment_address_from);
             {
@@ -2246,21 +2170,14 @@ pub mod tests {
                 cmd.execute(&ctx, &params).unwrap();
             }
             _ensure_schema_added(&ctx, &did);
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         #[cfg(feature = "nullpay_plugin")]
         pub fn schema_works_for_set_fees_input_amount_lower_fee() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-            crate_send_and_use_new_nym(&ctx);
-            load_null_payment_plugin(&ctx);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_new_identity(&ctx);
             set_fees(&ctx, "SCHEMA:101");
 
             let payment_address_from = create_address_and_mint_sources(&ctx);
@@ -2274,40 +2191,25 @@ pub mod tests {
                 params.insert("fees_inputs", input);
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn schema_works_for_missed_required_params() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
             {
                 let cmd = schema_command::new();
                 let mut params = CommandParams::new();
                 params.insert("name", "gvt".to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn schema_works_unknown_submitter() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
+            let ctx = setup_with_wallet_and_pool();
             new_did(&ctx, SEED_MY3);
             use_did(&ctx, DID_MY3);
             {
@@ -2318,18 +2220,12 @@ pub mod tests {
                 params.insert("attr_names", "name,age".to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn schema_works_for_no_active_did() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
+            let ctx = setup_with_wallet_and_pool();
             {
                 let cmd = schema_command::new();
                 let mut params = CommandParams::new();
@@ -2338,9 +2234,7 @@ pub mod tests {
                 params.insert("attr_names", "name,age".to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
     }
 
@@ -2349,76 +2243,46 @@ pub mod tests {
 
         #[test]
         pub fn get_validator_info_works() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
             {
                 let cmd = get_validator_info_command::new();
                 let params = CommandParams::new();
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn get_validator_info_works_for_nodes() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
             {
                 let cmd = get_validator_info_command::new();
                 let mut params = CommandParams::new();
                 params.insert("nodes", "Node1,Node2".to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn get_validator_info_works_for_unknown_node() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
             {
                 let cmd = get_validator_info_command::new();
                 let mut params = CommandParams::new();
                 params.insert("nodes", "Unknown Node".to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn get_validator_info_works_for_timeout() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
             {
                 let cmd = get_validator_info_command::new();
                 let mut params = CommandParams::new();
@@ -2426,9 +2290,7 @@ pub mod tests {
                 params.insert("timeout", "10".to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
     }
 
@@ -2437,13 +2299,8 @@ pub mod tests {
 
         #[test]
         pub fn get_schema_works() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            let did = crate_send_and_use_new_nym(&ctx);
+            let ctx = setup_with_wallet_and_pool();
+            let (did, _) = use_new_identity(&ctx);
             {
                 let cmd = schema_command::new();
                 let mut params = CommandParams::new();
@@ -2461,21 +2318,13 @@ pub mod tests {
                 params.insert("version", "1.0".to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn schema_works_for_unknown_schema() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
             {
                 let cmd = get_schema_command::new();
                 let mut params = CommandParams::new();
@@ -2484,19 +2333,12 @@ pub mod tests {
                 params.insert("version", "1.0".to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
-        #[test]
+        #[test] // TODO: CHECK
         pub fn schema_works_for_unknown_submitter() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
+            let ctx = setup_with_wallet_and_pool();
             new_did(&ctx, SEED_MY3);
             use_did(&ctx, DID_MY3);
             {
@@ -2507,20 +2349,13 @@ pub mod tests {
                 params.insert("version", "1.0".to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn schema_works_for_no_active_did() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            let did = crate_send_and_use_new_nym(&ctx);
+            let ctx = setup_with_wallet_and_pool();
+            let (did, _) = use_new_identity(&ctx);
             {
                 let cmd = schema_command::new();
                 let mut params = CommandParams::new();
@@ -2543,9 +2378,7 @@ pub mod tests {
                 params.insert("version", "1.0".to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
     }
 
@@ -2554,12 +2387,8 @@ pub mod tests {
 
         #[test]
         pub fn cred_def_works() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-            let did = crate_send_and_use_new_nym(&ctx);
+            let ctx = setup_with_wallet_and_pool();
+            let (did, _) = use_new_identity(&ctx);
             let schema_id = send_schema(&ctx, &did);
             {
                 let cmd = cred_def_command::new();
@@ -2571,23 +2400,16 @@ pub mod tests {
                 cmd.execute(&ctx, &params).unwrap();
             }
             _ensure_cred_def_added(&ctx, &did, &schema_id);
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         #[cfg(feature = "nullpay_plugin")]
         pub fn cred_def_works_for_set_fees() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-            let did = crate_send_and_use_new_nym(&ctx);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            let (did, _) = use_new_identity(&ctx);
             let schema_id = send_schema(&ctx, &did);
 
-            load_null_payment_plugin(&ctx);
             set_fees(&ctx, FEES);
             let payment_address_from = create_address_and_mint_sources(&ctx);
             let input = get_source_input(&ctx, &payment_address_from);
@@ -2603,23 +2425,16 @@ pub mod tests {
                 cmd.execute(&ctx, &params).unwrap();
             }
             _ensure_cred_def_added(&ctx, &did, &schema_id);
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         #[cfg(feature = "nullpay_plugin")]
         pub fn cred_def_works_for_set_fees_input_amount_lower_fee() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-            let did = crate_send_and_use_new_nym(&ctx);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            let (did, _) = use_new_identity(&ctx);
             let schema_id = send_schema(&ctx, &did);
 
-            load_null_payment_plugin(&ctx);
             set_fees(&ctx, "CRED_DEF:101");
             let payment_address_from = create_address_and_mint_sources(&ctx);
             let input = get_source_input(&ctx, &payment_address_from);
@@ -2633,40 +2448,25 @@ pub mod tests {
                 params.insert("fees_inputs", input);
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn cred_def_works_for_missed_required_params() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
             {
                 let cmd = cred_def_command::new();
                 let mut params = CommandParams::new();
                 params.insert("schema_id", "1".to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn cred_def_works_for_unknown_submitter() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
+            let ctx = setup_with_wallet_and_pool();
             new_did(&ctx, SEED_MY3);
             use_did(&ctx, DID_MY3);
             {
@@ -2678,18 +2478,12 @@ pub mod tests {
                 params.insert("primary", CRED_DEF_DATA.to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn cred_def_works_for_no_active_did() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
+            let ctx = setup_with_wallet_and_pool();
             {
                 let cmd = cred_def_command::new();
                 let mut params = CommandParams::new();
@@ -2699,9 +2493,7 @@ pub mod tests {
                 params.insert("primary", CRED_DEF_DATA.to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
     }
 
@@ -2710,15 +2502,9 @@ pub mod tests {
 
         #[test]
         pub fn get_cred_def_works() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            let did = crate_send_and_use_new_nym(&ctx);
+            let ctx = setup_with_wallet_and_pool();
+            let (did, _) = use_new_identity(&ctx);
             let schema_id = send_schema(&ctx, &did);
-            use_did(&ctx, DID_TRUSTEE);
             {
                 let cmd = cred_def_command::new();
                 let mut params = CommandParams::new();
@@ -2728,31 +2514,23 @@ pub mod tests {
                 params.insert("primary", CRED_DEF_DATA.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            _ensure_cred_def_added(&ctx, DID_TRUSTEE, &schema_id);
+            _ensure_cred_def_added(&ctx, &did, &schema_id);
             {
                 let cmd = get_cred_def_command::new();
                 let mut params = CommandParams::new();
                 params.insert("schema_id", schema_id);
                 params.insert("signature_type", "CL".to_string());
                 params.insert("tag", "TAG".to_string());
-                params.insert("origin", DID_TRUSTEE.to_string());
+                params.insert("origin", did.clone());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn get_cred_def_works_for_unknown_cred_def() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
             {
                 let cmd = get_cred_def_command::new();
                 let mut params = CommandParams::new();
@@ -2762,22 +2540,14 @@ pub mod tests {
                 params.insert("origin", DID_MY3.to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn get_cred_def_works_for_no_active_did() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            let did = crate_send_and_use_new_nym(&ctx);
+            let ctx = setup_with_wallet_and_pool();
+            let (did, _) = use_new_identity(&ctx);
             let schema_id = send_schema(&ctx, &did);
-            use_did(&ctx, DID_TRUSTEE);
             {
                 let cmd = cred_def_command::new();
                 let mut params = CommandParams::new();
@@ -2787,7 +2557,7 @@ pub mod tests {
                 params.insert("primary", CRED_DEF_DATA.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            _ensure_cred_def_added(&ctx, DID_TRUSTEE, &schema_id);
+            _ensure_cred_def_added(&ctx, &did, &schema_id);
 
             // to reset active did
             close_wallet(&ctx);
@@ -2799,12 +2569,10 @@ pub mod tests {
                 params.insert("schema_id", schema_id);
                 params.insert("signature_type", "CL".to_string());
                 params.insert("tag", "TAG".to_string());
-                params.insert("origin", DID_TRUSTEE.to_string());
+                params.insert("origin", did.clone());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
     }
 
@@ -2812,22 +2580,13 @@ pub mod tests {
         use super::*;
 
         #[test]
+        #[ignore] //TODO: FIXME currently unstable pool behaviour after new non-existing node was added
         pub fn node_works() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            let my_seed = "00000000000000000000000MySTEWARD";
-            let my_did = "GykzQ65PxaH3RUDypuwWTB";
-            let my_verkey = "9i7fMkxTSdTaHkTmLqZ3exRkTfsQ5LLoxzDG1kjE8HLD";
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            new_did(&ctx, my_seed);
-            use_did(&ctx, DID_TRUSTEE);
-            send_nym(&ctx, my_did, my_verkey, Some("STEWARD"));
-            use_did(&ctx, my_did);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
+            let (_did, my_verkey) = create_new_did(&ctx);
+            send_nym(&ctx, &_did, &my_verkey, Some("STEWARD"));
+            use_did(&ctx, &_did);
             {
                 let cmd = node_command::new();
                 let mut params = CommandParams::new();
@@ -2842,9 +2601,7 @@ pub mod tests {
                 params.insert("services", "VALIDATOR".to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
     }
 
@@ -2853,14 +2610,8 @@ pub mod tests {
 
         #[test]
         pub fn pool_config_works() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
             {
                 let cmd = pool_config_command::new();
                 let mut params = CommandParams::new();
@@ -2873,9 +2624,7 @@ pub mod tests {
                 params.insert("writes", "true".to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
     }
 
@@ -2884,16 +2633,10 @@ pub mod tests {
 
         #[test]
         pub fn pool_restart_works() {
-            TestUtils::cleanup_storage();
             let datetime = r#"2020-01-25T12:49:05.258870+00:00"#;
 
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
             {
                 let cmd = pool_restart_command::new();
                 let mut params = CommandParams::new();
@@ -2901,23 +2644,15 @@ pub mod tests {
                 params.insert("datetime", datetime.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn pool_restart_works_for_nodes() {
-            TestUtils::cleanup_storage();
             let datetime = r#"2020-01-25T12:49:05.258870+00:00"#;
 
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
             {
                 let cmd = pool_restart_command::new();
                 let mut params = CommandParams::new();
@@ -2926,23 +2661,15 @@ pub mod tests {
                 params.insert("nodes", "Node1,Node2".to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn pool_restart_works_for_timeout() {
-            TestUtils::cleanup_storage();
             let datetime = r#"2020-01-25T12:49:05.258870+00:00"#;
 
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
             {
                 let cmd = pool_restart_command::new();
                 let mut params = CommandParams::new();
@@ -2952,9 +2679,7 @@ pub mod tests {
                 params.insert("timeout", "10".to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
     }
 
@@ -2964,19 +2689,13 @@ pub mod tests {
         #[test]
         #[ignore]
         pub fn pool_upgrade_works() {
-            TestUtils::cleanup_storage();
             let schedule = r#"{"Gw6pDLhcBcoQesN72qfotTgFa7cbuqZpkX3Xo6pLhPhv":"2020-01-25T12:49:05.258870+00:00",
                                     "8ECVSk179mjsjKRLWiQtssMLgp6EPhWXtaYyStWPSGAb":"2020-01-25T13:49:05.258870+00:00",
                                     "DKVxG2fXXTU8yT5N7hGEbXB3dfdAnYv1JczDUHpmDxya":"2020-01-25T14:49:05.258870+00:00",
                                     "4PS3EDQ3dW1tci1Bp6543CfuuebjFrg36kLAUcskGfaA":"2020-01-25T15:49:05.258870+00:00"}"#;
 
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
             {
                 let cmd = pool_upgrade_command::new();
                 let mut params = CommandParams::new();
@@ -3000,9 +2719,7 @@ pub mod tests {
                 params.insert("sha256", "ac3eb2cc3ac9e24a494e285cb387c69510f28de51c15bb93179d9c7f28705398".to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
     }
 
@@ -3032,35 +2749,21 @@ pub mod tests {
 
         #[test]
         pub fn custom_works() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
             {
                 let cmd = custom_command::new();
                 let mut params = CommandParams::new();
                 params.insert("txn", TXN.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn custom_works_for_sign() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
             {
                 let cmd = custom_command::new();
                 let mut params = CommandParams::new();
@@ -3068,41 +2771,25 @@ pub mod tests {
                 params.insert("txn", TXN_FOR_SIGN.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn custom_works_for_missed_txn_field() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
             {
                 let cmd = custom_command::new();
                 let params = CommandParams::new();
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn custom_works_for_invalid_transaction_format() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
             {
                 let cmd = custom_command::new();
                 let mut params = CommandParams::new();
@@ -3113,20 +2800,16 @@ pub mod tests {
                                                   "#, DID_TRUSTEE));
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn custom_works_for_no_opened_pool() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
+            let ctx = setup();
 
             create_and_open_wallet(&ctx);
 
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            use_trustee(&ctx);
             {
                 let cmd = custom_command::new();
                 let mut params = CommandParams::new();
@@ -3134,19 +2817,13 @@ pub mod tests {
                 cmd.execute(&ctx, &params).unwrap_err();
             }
             close_and_delete_wallet(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down();
         }
 
 
         #[test]
         pub fn custom_works_for_sign_without_active_did() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
-
-            new_did(&ctx, SEED_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool();
             {
                 let cmd = custom_command::new();
                 let mut params = CommandParams::new();
@@ -3154,18 +2831,12 @@ pub mod tests {
                 params.insert("txn", TXN.to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn custom_works_for_unknown_submitter_did() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            create_and_connect_pool(&ctx);
+            let ctx = setup_with_wallet_and_pool();
 
             new_did(&ctx, SEED_MY3);
             use_did(&ctx, DID_MY3);
@@ -3176,9 +2847,7 @@ pub mod tests {
                 params.insert("txn", TXN_FOR_SIGN.to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
     }
 
@@ -3188,14 +2857,8 @@ pub mod tests {
 
         #[test]
         pub fn get_payment_sources_works() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             let payment_address = create_address_and_mint_sources(&ctx);
             {
                 let cmd = get_payment_sources_command::new();
@@ -3203,80 +2866,53 @@ pub mod tests {
                 params.insert("payment_address", payment_address);
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn get_payment_sources_works_for_no_sources() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = get_payment_sources_command::new();
                 let mut params = CommandParams::new();
                 params.insert("payment_address", PAYMENT_ADDRESS.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn get_payment_sources_works_for_unknown_payment_method() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = get_payment_sources_command::new();
                 let mut params = CommandParams::new();
                 params.insert("payment_address", format!("pay:{}:test", UNKNOWN_PAYMENT_METHOD));
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn get_payment_sources_works_for_invalid_payment_address() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = get_payment_sources_command::new();
                 let mut params = CommandParams::new();
                 params.insert("payment_address", INVALID_PAYMENT_ADDRESS.to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn get_payment_sources_works_for_no_active_wallet() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
+            let ctx = setup();
 
-            create_and_connect_pool(&ctx);
+            ::commands::pool::tests::create_and_connect_pool(&ctx);
             load_null_payment_plugin(&ctx);
             {
                 let cmd = get_payment_sources_command::new();
@@ -3285,38 +2921,25 @@ pub mod tests {
                 cmd.execute(&ctx, &params).unwrap_err();
             }
             disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down();
         }
 
         #[test]
         pub fn get_payment_sources_works_for_no_active_did() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
             {
                 let cmd = get_payment_sources_command::new();
                 let mut params = CommandParams::new();
                 params.insert("payment_address", PAYMENT_ADDRESS.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn get_payment_sources_works_for_extra() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = mint_prepare_command::new();
                 let mut params = CommandParams::new();
@@ -3330,9 +2953,7 @@ pub mod tests {
                 params.insert("payment_address", PAYMENT_ADDRESS.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
     }
 
@@ -3342,15 +2963,8 @@ pub mod tests {
 
         #[test]
         pub fn payment_works() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
-
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             let payment_address_from = create_address_and_mint_sources(&ctx);
             let input = get_source_input(&ctx, &payment_address_from);
             {
@@ -3360,22 +2974,13 @@ pub mod tests {
                 params.insert("outputs", format!("({},{})", PAYMENT_ADDRESS, 10));
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn payment_works_for_extra() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
-
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             let payment_address_from = create_address_and_mint_sources(&ctx);
             let input = get_source_input(&ctx, &payment_address_from);
             {
@@ -3386,21 +2991,13 @@ pub mod tests {
                 params.insert("extra", EXTRA.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn payment_works_for_multiple_inputs() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
 
             let payment_address_from_1 = create_address_and_mint_sources(&ctx);
             let input_1 = get_source_input(&ctx, &payment_address_from_1);
@@ -3415,21 +3012,13 @@ pub mod tests {
                 params.insert("outputs", format!("({},{})", PAYMENT_ADDRESS, 150));
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn payment_works_for_one_input_and_multiple_outputs() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
 
             let payment_address_from_1 = create_address_and_mint_sources(&ctx);
             let input_1 = get_source_input(&ctx, &payment_address_from_1);
@@ -3442,21 +3031,13 @@ pub mod tests {
                 params.insert("outputs", format!("({},{}),({},{})", PAYMENT_ADDRESS, 10, payment_address_to, 20));
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn payment_works_for_multiple_inputs_and_outputs() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
 
             let payment_address_from_1 = create_address_and_mint_sources(&ctx);
             let input_1 = get_source_input(&ctx, &payment_address_from_1);
@@ -3472,21 +3053,13 @@ pub mod tests {
                 params.insert("outputs", format!("({},{}),({},{})", PAYMENT_ADDRESS, 10, payment_address_to, 20));
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn payment_works_for_not_enough_amount() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
 
             let payment_address_from = create_address_and_mint_sources(&ctx);
             let input = get_source_input(&ctx, &payment_address_from);
@@ -3497,21 +3070,13 @@ pub mod tests {
                 params.insert("outputs", format!("({},{})", PAYMENT_ADDRESS, 1000));
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn payment_works_for_unknown_input() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = payment_command::new();
                 let mut params = CommandParams::new();
@@ -3519,21 +3084,13 @@ pub mod tests {
                 params.insert("outputs", format!("({},{})", PAYMENT_ADDRESS, 10));
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn payment_works_for_unknown_payment_method() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = payment_command::new();
                 let mut params = CommandParams::new();
@@ -3541,21 +3098,13 @@ pub mod tests {
                 params.insert("outputs", format!("(pay:{}:CnEDk9HrMnmiHXEV1WFgbVCRteYnPqsJwrTdcZaNhFVW,100)", UNKNOWN_PAYMENT_METHOD));
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn payment_works_for_incompatible_payment_methods() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = payment_command::new();
                 let mut params = CommandParams::new();
@@ -3563,21 +3112,13 @@ pub mod tests {
                 params.insert("outputs", "(pay:null_method_2:CnEDk9HrMnmiHXEV1WFgbVCRteYnPqsJwrTdcZaNhFVW,100))".to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn payment_works_for_empty_inputs() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = payment_command::new();
                 let mut params = CommandParams::new();
@@ -3585,21 +3126,13 @@ pub mod tests {
                 params.insert("outputs", OUTPUT.to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn payment_works_for_empty_outputs() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = payment_command::new();
                 let mut params = CommandParams::new();
@@ -3607,21 +3140,13 @@ pub mod tests {
                 params.insert("outputs", "".to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn payment_works_for_invalid_inputs() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = payment_command::new();
                 let mut params = CommandParams::new();
@@ -3629,21 +3154,13 @@ pub mod tests {
                 params.insert("outputs", OUTPUT.to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn payment_works_for_invalid_outputs() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = payment_command::new();
                 let mut params = CommandParams::new();
@@ -3658,21 +3175,13 @@ pub mod tests {
                 params.insert("outputs", INVALID_OUTPUT.to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn payment_works_for_several_equal_inputs() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = payment_command::new();
                 let mut params = CommandParams::new();
@@ -3680,21 +3189,13 @@ pub mod tests {
                 params.insert("outputs", OUTPUT.to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn payment_works_for_negative_inputs_amount() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = payment_command::new();
                 let mut params = CommandParams::new();
@@ -3702,21 +3203,13 @@ pub mod tests {
                 params.insert("outputs", format!("({},{})", PAYMENT_ADDRESS, 10));
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn payment_works_for_negative_outputs_amount() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
 
             let payment_address_from = create_address_and_mint_sources(&ctx);
             let input = get_source_input(&ctx, &payment_address_from);
@@ -3727,9 +3220,7 @@ pub mod tests {
                 params.insert("outputs", format!("({},{})", PAYMENT_ADDRESS, -10));
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
     }
 
@@ -3739,14 +3230,8 @@ pub mod tests {
 
         #[test]
         pub fn get_fees_works() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             set_fees(&ctx, FEES);
             {
                 let cmd = get_fees_command::new();
@@ -3754,59 +3239,40 @@ pub mod tests {
                 params.insert("payment_method", NULL_PAYMENT_METHOD.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn get_fees_works_for_no_fees() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = get_fees_command::new();
                 let mut params = CommandParams::new();
                 params.insert("payment_method", NULL_PAYMENT_METHOD.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn get_fees_works_for_unknown_payment_method() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = get_fees_command::new();
                 let mut params = CommandParams::new();
                 params.insert("payment_method", UNKNOWN_PAYMENT_METHOD.to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn get_fees_works_for_no_active_wallet() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
+            let ctx = setup();
 
-            create_and_connect_pool(&ctx);
+            ::commands::pool::tests::create_and_connect_pool(&ctx);
             load_null_payment_plugin(&ctx);
             {
                 let cmd = get_fees_command::new();
@@ -3815,27 +3281,19 @@ pub mod tests {
                 cmd.execute(&ctx, &params).unwrap_err();
             }
             disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down();
         }
 
         #[test]
         pub fn get_fees_works_for_no_active_did() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
             {
                 let cmd = get_fees_command::new();
                 let mut params = CommandParams::new();
                 params.insert("payment_method", NULL_PAYMENT_METHOD.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
     }
 
@@ -3845,51 +3303,34 @@ pub mod tests {
 
         #[test]
         pub fn mint_prepare_works() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = mint_prepare_command::new();
                 let mut params = CommandParams::new();
                 params.insert("outputs", OUTPUT.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn mint_prepare_works_for_big_amount() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = mint_prepare_command::new();
                 let mut params = CommandParams::new();
                 params.insert("outputs", "(pay:null:CnEDk9HrMnmiHXEV1WFgbVCRteYnPqsJwrTdcZaNhFVW,10000000000)".to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn mint_prepare_works_for_extra() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = mint_prepare_command::new();
                 let mut params = CommandParams::new();
@@ -3897,160 +3338,111 @@ pub mod tests {
                 params.insert("extra", EXTRA.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn mint_prepare_works_for_multiple_outputs() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = mint_prepare_command::new();
                 let mut params = CommandParams::new();
                 params.insert("outputs", format!("{},{}", OUTPUT, OUTPUT_2));
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn mint_prepare_works_for_empty_outputs() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = mint_prepare_command::new();
                 let mut params = CommandParams::new();
                 params.insert("outputs", "".to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn mint_prepare_works_for_unknown_payment_method() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = mint_prepare_command::new();
                 let mut params = CommandParams::new();
                 params.insert("outputs", format!("(pay:{}:CnEDk9HrMnmiHXEV1WFgbVCRteYnPqsJwrTdcZaNhFVW,100)", UNKNOWN_PAYMENT_METHOD));
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn mint_prepare_works_for_invalid_outputs_format() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = mint_prepare_command::new();
                 let mut params = CommandParams::new();
                 params.insert("outputs", INVALID_OUTPUT.to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn mint_prepare_works_for_invalid_payment_address() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = mint_prepare_command::new();
                 let mut params = CommandParams::new();
                 params.insert("outputs", "(pay:null,100)".to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn mint_prepare_works_for_incompatible_payment_methods() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = mint_prepare_command::new();
                 let mut params = CommandParams::new();
                 params.insert("outputs", "(pay:null_1:CnEDk9HrMnmiHXEV1WFgbVCRteYnPqsJwrTdcZaNhFVW,100),(pay:null_2:GjZWsBLgZCR18aL468JAT7w9CZRiBnpxUPPgyQxh4voa,11)".to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn mint_prepare_works_for_negative_amount() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = mint_prepare_command::new();
                 let mut params = CommandParams::new();
                 params.insert("outputs", "(pay:null:CnEDk9HrMnmiHXEV1WFgbVCRteYnPqsJwrTdcZaNhFVW,-10)".to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn mint_prepare_works_for_multiple_outputs_negative_amount_for_second() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = mint_prepare_command::new();
                 let mut params = CommandParams::new();
                 params.insert("outputs", "(pay:null:address1,10),(pay:null:address2,-10)".to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
     }
 
@@ -4060,14 +3452,8 @@ pub mod tests {
 
         #[test]
         pub fn set_fees_prepare_works() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = set_fees_prepare_command::new();
                 let mut params = CommandParams::new();
@@ -4075,21 +3461,13 @@ pub mod tests {
                 params.insert("fees", FEES.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn set_fees_prepare_works_for_unknown_payment_method() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = set_fees_prepare_command::new();
                 let mut params = CommandParams::new();
@@ -4097,21 +3475,13 @@ pub mod tests {
                 params.insert("fees", FEES.to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn set_fees_prepare_works_for_invalid_fees_format() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = set_fees_prepare_command::new();
                 let mut params = CommandParams::new();
@@ -4119,21 +3489,13 @@ pub mod tests {
                 params.insert("fees", "1,100".to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn set_fees_prepare_works_for_empty_fees() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = set_fees_prepare_command::new();
                 let mut params = CommandParams::new();
@@ -4141,18 +3503,14 @@ pub mod tests {
                 params.insert("fees", "".to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn set_fees_prepare_works_for_no_active_wallet() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            load_null_payment_plugin(&ctx);
+            let ctx = setup();
+            pool::tests::create_and_connect_pool(&ctx);
+            common::tests::load_null_payment_plugin(&ctx);
             {
                 let cmd = set_fees_prepare_command::new();
                 let mut params = CommandParams::new();
@@ -4161,19 +3519,13 @@ pub mod tests {
                 cmd.execute(&ctx, &params).unwrap_err();
             }
             disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down();
         }
 
         #[test]
         pub fn set_fees_prepare_works_for_negative_amount() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = set_fees_prepare_command::new();
                 let mut params = CommandParams::new();
@@ -4181,9 +3533,7 @@ pub mod tests {
                 params.insert("fees", "1:-1,101:-1".to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
     }
 
@@ -4193,14 +3543,8 @@ pub mod tests {
 
         #[test]
         pub fn verify_payment_receipts_works() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
 
             let payment_address_from = create_address_and_mint_sources(&ctx);
             let input = get_source_input(&ctx, &payment_address_from);
@@ -4210,21 +3554,13 @@ pub mod tests {
                 params.insert("receipt", input);
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn verify_payment_receipts_works_for_no_active_did() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
 
             let payment_address_from = create_address_and_mint_sources(&ctx);
             let input = get_source_input(&ctx, &payment_address_from);
@@ -4239,51 +3575,33 @@ pub mod tests {
                 params.insert("receipt", input);
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn verify_payment_receipts_works_for_not_found() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = verify_payment_receipt_command::new();
                 let mut params = CommandParams::new();
                 params.insert("receipt", "pay:null:0_PqVjwJC42sxCTJp".to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn verify_payment_receipts_works_for_invalid_receipt() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_connect_pool(&ctx);
-            create_and_open_wallet(&ctx);
-            load_null_payment_plugin(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool_and_payment_plugin();
+            use_trustee(&ctx);
             {
                 let cmd = verify_payment_receipt_command::new();
                 let mut params = CommandParams::new();
                 params.insert("receipt", "invalid_receipt".to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            disconnect_and_delete_pool(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
     }
 
@@ -4292,71 +3610,150 @@ pub mod tests {
 
         #[test]
         pub fn sign_multi_works() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
             {
                 let cmd = sign_multi_command::new();
                 let mut params = CommandParams::new();
                 params.insert("txn", r#"{"reqId":1496822211362017764}"#.to_string());
                 cmd.execute(&ctx, &params).unwrap();
             }
-            close_and_delete_wallet(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn sign_multi_works_for_no_active_did() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
+            let ctx = setup_with_wallet_and_pool();
             {
                 let cmd = sign_multi_command::new();
                 let mut params = CommandParams::new();
                 params.insert("txn", r#"{"reqId":1496822211362017764}"#.to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
         #[test]
         pub fn sign_multi_works_for_invalid_message_format() {
-            TestUtils::cleanup_storage();
-            let ctx = CommandContext::new();
-
-            create_and_open_wallet(&ctx);
-            new_did(&ctx, SEED_TRUSTEE);
-            use_did(&ctx, DID_TRUSTEE);
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
             {
                 let cmd = sign_multi_command::new();
                 let mut params = CommandParams::new();
                 params.insert("txn", r#"1496822211362017764"#.to_string());
                 cmd.execute(&ctx, &params).unwrap_err();
             }
-            close_and_delete_wallet(&ctx);
-            TestUtils::cleanup_storage();
+            tear_down_with_wallet_and_pool(&ctx);
         }
     }
 
-    use std::sync::{Once, ONCE_INIT};
+    mod auth_rule {
+        use super::*;
 
-    pub fn send_nym_my1(ctx: &CommandContext) {
-        lazy_static! {
-            static ref SEND_NYM: Once = ONCE_INIT;
+        const AUTH_TYPE: &str = "NYM";
+        const AUTH_ACTION: &str = "ADD";
+        const FIELD: &str = "role";
+        const NEW_VALUE: &str = "101";
+        const ROLE_CONSTRAINT: &str = r#"{
+            "sig_count": 1,
+            "metadata": {},
+            "role": "0",
+            "constraint_id": "ROLE",
+            "need_to_be_owner": false
+        }"#;
+
+        #[test]
+        pub fn auth_rule_works() {
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
+            {
+                let cmd = auth_rule_command::new();
+                let mut params = CommandParams::new();
+                params.insert("txn_type", "NYM".to_string());
+                params.insert("action", "add".to_string());
+                params.insert("field", "role".to_string());
+                params.insert("new_value", "101".to_string());
+                params.insert("constraint", ROLE_CONSTRAINT.to_string());
+                cmd.execute(&ctx, &params).unwrap();
+            }
+            tear_down_with_wallet_and_pool(&ctx);
         }
 
-        SEND_NYM.call_once(|| {
-            let cmd = nym_command::new();
-            let mut params = CommandParams::new();
-            params.insert("did", DID_MY1.to_string());
-            params.insert("verkey", VERKEY_MY1.to_string());
-            cmd.execute(&ctx, &params).unwrap();
-        });
+        #[test]
+        pub fn get_auth_rule_works_for_one_constraint() {
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
+            {
+                let cmd = auth_rule_command::new();
+                let mut params = CommandParams::new();
+                params.insert("txn_type", AUTH_TYPE.to_string());
+                params.insert("action", AUTH_ACTION.to_string());
+                params.insert("field", FIELD.to_string());
+                params.insert("new_value", NEW_VALUE.to_string());
+                params.insert("constraint", ROLE_CONSTRAINT.to_string());
+                cmd.execute(&ctx, &params).unwrap();
+            }
+
+            {
+                let cmd = get_auth_rule_command::new();
+                let mut params = CommandParams::new();
+                params.insert("txn_type", AUTH_TYPE.to_string());
+                params.insert("action", AUTH_ACTION.to_string());
+                params.insert("field", FIELD.to_string());
+                params.insert("new_value", NEW_VALUE.to_string());
+                cmd.execute(&ctx, &params).unwrap();
+            }
+
+            tear_down_with_wallet_and_pool(&ctx);
+        }
+
+        #[test]
+        pub fn get_auth_rule_works_for_get_all() {
+            let ctx = setup_with_wallet_and_pool();
+
+            {
+                let cmd = get_auth_rule_command::new();
+                let params = CommandParams::new();
+                cmd.execute(&ctx, &params).unwrap();
+            }
+
+            tear_down_with_wallet_and_pool(&ctx);
+        }
+
+        #[test]
+        pub fn get_auth_rule_works_for_no_constraint() {
+            let ctx = setup_with_wallet_and_pool();
+            use_trustee(&ctx);
+            {
+                let cmd = get_auth_rule_command::new();
+                let mut params = CommandParams::new();
+                params.insert("txn_type", AUTH_TYPE.to_string());
+                params.insert("action", AUTH_ACTION.to_string());
+                params.insert("field", "WRONG_FIELD".to_string());
+                params.insert("new_value", "WRONG_VALUE".to_string());
+                cmd.execute(&ctx, &params).unwrap_err();
+            }
+
+            tear_down_with_wallet_and_pool(&ctx);
+        }
+    }
+
+    fn create_new_did(ctx: &CommandContext) -> (String, String) {
+        let (wallet_handle, _) = get_opened_wallet(ctx).unwrap();
+        Did::new(wallet_handle, "{}").unwrap()
+    }
+
+    fn use_trustee(ctx: &CommandContext) {
+        new_did(&ctx, SEED_TRUSTEE);
+        use_did(&ctx, DID_TRUSTEE);
+    }
+
+    fn use_new_identity(ctx: &CommandContext) -> (String, String) {
+        use_trustee(ctx);
+        let (did, verkey) = create_new_did(ctx);
+        send_nym(ctx, &did, &verkey, Some("TRUST_ANCHOR"));
+        use_did(&ctx, &did);
+        (did, verkey)
     }
 
     pub fn send_schema(ctx: &CommandContext, did: &str) -> String {
@@ -4368,16 +3765,6 @@ pub mod tests {
         let schema: serde_json::Value = serde_json::from_str(&schema_response).unwrap();
         let seq_no = schema["result"]["txnMetadata"]["seqNo"].as_i64().unwrap();
         seq_no.to_string()
-    }
-
-    pub fn crate_send_and_use_new_nym(ctx: &CommandContext) -> String {
-        let (wallet_handle, _) = get_opened_wallet(ctx).unwrap();
-        new_did(&ctx, SEED_TRUSTEE);
-        use_did(&ctx, DID_TRUSTEE);
-        let (did, verkey) = Did::new(wallet_handle, "{}").unwrap();
-        send_nym(ctx, &did, &verkey, Some("TRUST_ANCHOR"));
-        use_did(&ctx, &did);
-        did
     }
 
     pub fn send_nym(ctx: &CommandContext, did: &str, verkey: &str, role: Option<&str>) {
@@ -4434,7 +3821,7 @@ pub mod tests {
 
     fn _ensure_nym_added(ctx: &CommandContext, did: &str) {
         let request = Ledger::build_get_nym_request(None, did).unwrap();
-        _submit_retry(ctx, &request, |response| {
+        submit_retry(ctx, &request, |response| {
             serde_json::from_str::<Response<ReplyResult<String>>>(&response)
                 .and_then(|response| serde_json::from_str::<serde_json::Value>(&response.result.unwrap().data))
         }).unwrap();
@@ -4443,7 +3830,7 @@ pub mod tests {
     fn _ensure_attrib_added(ctx: &CommandContext, did: &str, raw: Option<&str>, hash: Option<&str>, enc: Option<&str>) {
         let attr = if raw.is_some() { Some("endpoint") } else { None };
         let request = Ledger::build_get_attrib_request(None, did, attr, hash, enc).unwrap();
-        _submit_retry(ctx, &request, |response| {
+        submit_retry(ctx, &request, |response| {
             serde_json::from_str::<Response<ReplyResult<String>>>(&response)
                 .map_err(|_| ())
                 .and_then(|response| {
@@ -4456,7 +3843,7 @@ pub mod tests {
     fn _ensure_schema_added(ctx: &CommandContext, did: &str) {
         let id = build_schema_id(did, "gvt", "1.0");
         let request = Ledger::build_get_schema_request(None, &id).unwrap();
-        _submit_retry(ctx, &request, |response| {
+        submit_retry(ctx, &request, |response| {
             let schema: serde_json::Value = serde_json::from_str(&response).unwrap();
             schema["result"]["seqNo"].as_i64().ok_or(())
         }).unwrap();
@@ -4465,27 +3852,9 @@ pub mod tests {
     fn _ensure_cred_def_added(ctx: &CommandContext, did: &str, schema_id: &str) {
         let id = build_cred_def_id(did, schema_id, "CL", "TAG");
         let request = Ledger::build_get_cred_def_request(None, &id).unwrap();
-        _submit_retry(ctx, &request, |response| {
+        submit_retry(ctx, &request, |response| {
             let cred_def: serde_json::Value = serde_json::from_str(&response).unwrap();
             cred_def["result"]["seqNo"].as_i64().ok_or(())
         }).unwrap();
-    }
-
-    fn _submit_retry<F, T, E>(ctx: &CommandContext, request: &str, parser: F) -> Result<(), ()>
-        where F: Fn(&str) -> Result<T, E> {
-        const SUBMIT_RETRY_CNT: usize = 3;
-        const SUBMIT_TIMEOUT_SEC: u64 = 2;
-
-        let pool_handle = ensure_connected_pool_handle(ctx).unwrap();
-
-        for _ in 0..SUBMIT_RETRY_CNT {
-            let response = Ledger::submit_request(pool_handle, request).unwrap();
-            if parser(&response).is_ok() {
-                return Ok(());
-            }
-            ::std::thread::sleep(::std::time::Duration::from_secs(SUBMIT_TIMEOUT_SEC));
-        }
-
-        return Err(());
     }
 }

@@ -37,7 +37,7 @@ extern "C" {
                                                      const char *  submitter_did,
                                                      const char *  request_json,
 
-                                                     void           (*cb)(indy_handle_t xcommand_handle,
+                                                     void           (*cb)(indy_handle_t command_handle_,
                                                                           indy_error_t  err,
                                                                           const char*   request_result_json)
                                                      );
@@ -63,7 +63,7 @@ extern "C" {
                                             indy_handle_t pool_handle,
                                             const char *  request_json,
 
-                                            void           (*cb)(indy_handle_t xcommand_handle,
+                                            void           (*cb)(indy_handle_t command_handle_,
                                                                  indy_error_t  err,
                                                                  const char*   request_result_json)
                                            );
@@ -99,7 +99,7 @@ extern "C" {
                                            const char *  nodes,
                                            indy_i32_t    timeout,
 
-                                           void           (*cb)(indy_handle_t xcommand_handle,
+                                           void           (*cb)(indy_handle_t command_handle_,
                                                                 indy_error_t  err,
                                                                 const char*   request_result_json)
                                            );
@@ -130,7 +130,7 @@ extern "C" {
                                          const char *   submitter_did,
                                          const char *   request_json,
 
-                                         void           (*cb)(indy_handle_t xcommand_handle,
+                                         void           (*cb)(indy_handle_t command_handle_,
                                                               indy_error_t  err,
                                                               const char*   signed_request_json)
                                          );
@@ -162,7 +162,7 @@ extern "C" {
                                                 const char *   submitter_did,
                                                 const char *   request_json,
 
-                                                void           (*cb)(indy_handle_t xcommand_handle,
+                                                void           (*cb)(indy_handle_t command_handle_,
                                                                      indy_error_t  err,
                                                                      const char*   signed_request_json)
                                                 );
@@ -185,7 +185,7 @@ extern "C" {
                                                    const char *  submitter_did,
                                                    const char *  target_did,
 
-                                                   void           (*cb)(indy_handle_t xcommand_handle,
+                                                   void           (*cb)(indy_handle_t command_handle_,
                                                                         indy_error_t  err,
                                                                         const char*   request_result_json)
                                                   );
@@ -219,7 +219,7 @@ extern "C" {
                                                const char *  alias,
                                                const char *  role,
 
-                                               void           (*cb)(indy_handle_t xcommand_handle,
+                                               void           (*cb)(indy_handle_t command_handle_,
                                                                     indy_error_t  err,
                                                                     const char*   request_json)
                                               );
@@ -248,7 +248,7 @@ extern "C" {
                                                   const char *  raw,
                                                   const char *  enc,
 
-                                                  void           (*cb)(indy_handle_t xcommand_handle,
+                                                  void           (*cb)(indy_handle_t command_handle_,
                                                                        indy_error_t  err,
                                                                        const char*   request_json)
                                                   );
@@ -277,7 +277,7 @@ extern "C" {
                                                       const char *  raw,
                                                       const char *  enc,
 
-                                                      void           (*cb)(indy_handle_t xcommand_handle,
+                                                      void           (*cb)(indy_handle_t command_handle_,
                                                                            indy_error_t  err,
                                                                            const char*   request_json)
                                                      );
@@ -300,7 +300,7 @@ extern "C" {
                                                    const char *  submitter_did,
                                                    const char *  target_did,
 
-                                                   void           (*cb)(indy_handle_t xcommand_handle,
+                                                   void           (*cb)(indy_handle_t command_handle_,
                                                                         indy_error_t  err,
                                                                         const char*   request_json)
                                                   );
@@ -313,7 +313,7 @@ extern "C" {
     /// data: Credential schema.
     /// {
     ///     id: identifier of schema
-    ///     attrNames: array of attribute name strings
+    ///     attrNames: array of attribute name strings (the number of attributes should be less or equal than 125)
     ///     name: Schema's name string
     ///     version: Schema's version string,
     ///     ver: Version of the Schema json
@@ -330,7 +330,7 @@ extern "C" {
                                                   const char *  submitter_did,
                                                   const char *  data,
 
-                                                  void           (*cb)(indy_handle_t xcommand_handle,
+                                                  void           (*cb)(indy_handle_t command_handle_,
                                                                        indy_error_t  err,
                                                                        const char*   request_json)
                                                  );
@@ -353,7 +353,7 @@ extern "C" {
                                                       const char *  submitter_did,
                                                       const char *  id,
 
-                                                      void           (*cb)(indy_handle_t xcommand_handle,
+                                                      void           (*cb)(indy_handle_t command_handle_,
                                                                            indy_error_t  err,
                                                                            const char*   request_json)
                                                      );
@@ -381,7 +381,7 @@ extern "C" {
     extern indy_error_t indy_parse_get_schema_response(indy_handle_t command_handle,
                                                        const char *  get_schema_response,
 
-                                                       void           (*cb)(indy_handle_t xcommand_handle,
+                                                       void           (*cb)(indy_handle_t command_handle_,
                                                                             indy_error_t  err,
                                                                             const char*   schema_id,
                                                                             const char*   schema_json)
@@ -417,7 +417,7 @@ extern "C" {
                                                     const char *  submitter_did,
                                                     const char *  data,
 
-                                                    void           (*cb)(indy_handle_t xcommand_handle,
+                                                    void           (*cb)(indy_handle_t command_handle_,
                                                                          indy_error_t  err,
                                                                          const char*   request_json)
                                                     );
@@ -441,7 +441,7 @@ extern "C" {
                                                          const char *  submitter_did,
                                                          const char *  id,
 
-                                                         void           (*cb)(indy_handle_t xcommand_handle,
+                                                         void           (*cb)(indy_handle_t command_handle_,
                                                                               indy_error_t  err,
                                                                               const char*   request_json)
                                                          );
@@ -472,7 +472,7 @@ extern "C" {
 
      extern indy_error_t indy_parse_get_cred_def_response(indy_handle_t command_handle,
                                                           const char *  get_cred_def_response,
-                                                          void           (*cb)(indy_handle_t xcommand_handle,
+                                                          void           (*cb)(indy_handle_t command_handle_,
                                                                                indy_error_t  err,
                                                                                const char*   cred_def_id,
                                                                                const char*   cred_def_json)
@@ -507,7 +507,7 @@ extern "C" {
                                                 const char *  target_did,
                                                 const char *  data,
 
-                                                void           (*cb)(indy_handle_t xcommand_handle,
+                                                void           (*cb)(indy_handle_t command_handle_,
                                                                      indy_error_t  err,
                                                                      const char*   request_json)
                                                );
@@ -527,7 +527,7 @@ extern "C" {
 
         extern indy_error_t indy_build_get_validator_info_request(indy_handle_t command_handle,
                                                        const char *  submitter_did,
-                                                       void           (*cb)(indy_handle_t xcommand_handle,
+                                                       void           (*cb)(indy_handle_t command_handle_,
                                                                             indy_error_t  err,
                                                                             const char*   request_json)
                                                        );
@@ -555,9 +555,9 @@ extern "C" {
     extern indy_error_t indy_build_get_txn_request(indy_handle_t command_handle,
                                                    const char *  submitter_did,
                                                    const char *  ledger_type,
-                                                   indy_i32_t    data,
+                                                   indy_i32_t    seq_no,
 
-                                                   void           (*cb)(indy_handle_t xcommand_handle,
+                                                   void           (*cb)(indy_handle_t command_handle_,
                                                                         indy_error_t  err,
                                                                         const char*   request_json)
                                                    );
@@ -584,7 +584,7 @@ extern "C" {
                                                        indy_bool_t    writes,
                                                        indy_bool_t    force,
 
-                                                       void           (*cb)(indy_handle_t xcommand_handle,
+                                                       void           (*cb)(indy_handle_t command_handle_,
                                                                             indy_error_t  err,
                                                                             const char*   request_json)
                                                        );
@@ -608,7 +608,7 @@ extern "C" {
                                                         const char *  submitter_did,
                                                         const char *  action,
                                                         const char *  datetime,
-                                                        void           (*cb)(indy_handle_t xcommand_handle,
+                                                        void           (*cb)(indy_handle_t command_handle_,
                                                                              indy_error_t  err,
                                                                              const char*   request_json)
                                                         );
@@ -652,7 +652,7 @@ extern "C" {
                                                         indy_bool_t   force,
                                                         const char *  package_,
 
-                                                        void           (*cb)(indy_handle_t xcommand_handle,
+                                                        void           (*cb)(indy_handle_t command_handle_,
                                                                              indy_error_t  err,
                                                                              const char*   request_json)
                                                         );
@@ -690,7 +690,7 @@ extern "C" {
                                                          const char *  submitter_did,
                                                          const char *  data,
 
-                                                         void           (*cb)(indy_handle_t xcommand_handle,
+                                                         void           (*cb)(indy_handle_t command_handle_,
                                                                               indy_error_t  err,
                                                                               const char*   request_json)
                                                          );
@@ -714,7 +714,7 @@ extern "C" {
                                                              const char *  submitter_did,
                                                              const char *  id,
 
-                                                             void           (*cb)(indy_handle_t xcommand_handle,
+                                                             void           (*cb)(indy_handle_t command_handle_,
                                                                                   indy_error_t  err,
                                                                                   const char*   request_json)
                                                             );
@@ -750,7 +750,7 @@ extern "C" {
     extern indy_error_t indy_parse_get_revoc_reg_def_response(indy_handle_t command_handle,
                                                               const char *  get_revoc_ref_def_response,
 
-                                                              void           (*cb)(indy_handle_t xcommand_handle,
+                                                              void           (*cb)(indy_handle_t command_handle_,
                                                                                    indy_error_t  err,
                                                                                    const char*   revoc_reg_def_id,
                                                                                    const char*   revoc_reg_def_json)
@@ -790,7 +790,7 @@ extern "C" {
                                                            const char *  rev_def_type,
                                                            const char *  value,
 
-                                                           void           (*cb)(indy_handle_t xcommand_handle,
+                                                           void           (*cb)(indy_handle_t command_handle_,
                                                                                 indy_error_t  err,
                                                                                 const char*   request_json)
                                                           );
@@ -816,7 +816,7 @@ extern "C" {
                                                          const char *  revoc_reg_def_id,
                                                          long long    timestamp,
 
-                                                         void           (*cb)(indy_handle_t xcommand_handle,
+                                                         void           (*cb)(indy_handle_t command_handle_,
                                                                               indy_error_t  err,
                                                                               const char*   request_json)
                                                         );
@@ -843,7 +843,7 @@ extern "C" {
     extern indy_error_t indy_parse_get_revoc_reg_response(indy_handle_t command_handle,
                                                           const char *  get_revoc_reg_response,
 
-                                                          void           (*cb)(indy_handle_t xcommand_handle,
+                                                          void           (*cb)(indy_handle_t command_handle_,
                                                                                indy_error_t  err,
                                                                                const char*   revoc_reg_def_id,
                                                                                const char*   revoc_reg_json,
@@ -874,7 +874,7 @@ extern "C" {
                                                                long long    from,
                                                                long long    to,
 
-                                                               void           (*cb)(indy_handle_t xcommand_handle,
+                                                               void           (*cb)(indy_handle_t command_handle_,
                                                                                     indy_error_t  err,
                                                                                     const char*   request_json)
                                                               );
@@ -904,12 +904,137 @@ extern "C" {
     extern indy_error_t indy_parse_get_revoc_reg_delta_response(indy_handle_t command_handle,
                                                                 const char *  get_revoc_reg_delta_response,
 
-                                                                void           (*cb)(indy_handle_t xcommand_handle,
+                                                                void           (*cb)(indy_handle_t command_handle_,
                                                                                      indy_error_t  err,
                                                                                      const char*   revoc_reg_def_id,
                                                                                      const char*   revoc_reg_delta_json,
                                                                                      unsigned long long      timestamp)
                                                                );
+
+
+    /// Parse transaction response to fetch metadata.
+    /// The important use case for this method is validation of Node's response freshens.
+    ///
+    /// Distributed Ledgers can reply with outdated information for consequence read request after write.
+    /// To reduce pool load libindy sends read requests to one random node in the pool.
+    /// Consensus validation is performed based on validation of nodes multi signature for current ledger Merkle Trie root.
+    /// This multi signature contains information about the latest ldeger's transaction ordering time and sequence number that this method returns.
+    ///
+    /// If node that returned response for some reason is out of consensus and has outdated ledger
+    /// it can be caught by analysis of the returned latest ledger's transaction ordering time and sequence number.
+    ///
+    /// There are two ways to filter outdated responses:
+    ///     1) based on "seqNo" - sender knows the sequence number of transaction that he consider as a fresh enough.
+    ///     2) based on "txnTime" - sender knows the timestamp that he consider as a fresh enough.
+    ///
+    /// Note: response of GET_VALIDATOR_INFO request isn't supported
+    ///
+    ///
+    /// #Params
+    /// command_handle: command handle to map callback to caller context.
+    /// response: response of write or get request.
+    /// cb: Callback that takes command result as parameter.
+    ///
+    /// #Returns
+    /// response metadata.
+    /// {
+    ///     "seqNo": Option<u64> - transaction sequence number,
+    ///     "txnTime": Option<u64> - transaction ordering time,
+    ///     "lastSeqNo": Option<u64> - the latest transaction seqNo for particular Node,
+    ///     "lastTxnTime": Option<u64> - the latest transaction ordering time for particular Node
+    /// }
+    ///
+    /// #Errors
+    /// Common*
+    /// Ledger*
+    extern indy_error_t indy_get_response_metadata(indy_handle_t command_handle,
+                                                   const char *  response,
+
+                                                   void           (*cb)(indy_handle_t command_handle_,
+                                                                        indy_error_t  err,
+                                                                        const char*   response_metadata)
+                                                  );
+
+    /// Builds a AUTH_RULE request. Request to change authentication rules for a ledger transaction.
+    ///
+    /// #Params
+    /// command_handle: command handle to map callback to caller context.
+    /// txn_type: ledger transaction alias or associated value.
+    /// action: type of an action.
+    ///     Can be either "ADD" (to add a new rule) or "EDIT" (to edit an existing one).
+    /// field: transaction field.
+    /// old_value: old value of a field, which can be changed to a new_value (mandatory for EDIT action).
+    /// new_value: new value that can be used to fill the field.
+    /// constraint: set of constraints required for execution of an action in the following format
+    ///     {
+    ///         constraint_id - <string> type of a constraint.
+    ///             Can be either "ROLE" to specify final constraint or  "AND"/"OR" to combine constraints.
+    ///         role - <string> role of a user which satisfy to constrain.
+    ///         sig_count - <u32> the number of signatures required to execution action.
+    ///         need_to_be_owner - <bool> if user must be an owner of transaction.
+    ///         metadata - <object> additional parameters of the constraint.
+    ///     }
+    /// can be combined by
+    ///     {
+    ///         'constraint_id': <"AND" or "OR">
+    ///         'auth_constraints': [<constraint_1>, <constraint_2>]
+    ///     }
+    ///
+    /// cb: Callback that takes command result as parameter.
+    ///
+    /// #Returns
+    /// Request result as json.
+    ///
+    /// #Errors
+    /// Common*
+    extern indy_error_t indy_build_auth_rule_request(indy_handle_t command_handle,
+                                                     const char *  submitter_did,
+                                                     const char *  txn_type,
+                                                     const char *  action,
+                                                     const char *  field,
+                                                     const char *  old_value,
+                                                     const char *  new_value,
+                                                     const char *  constraint,
+
+                                                     void           (*cb)(indy_handle_t command_handle_,
+                                                                          indy_error_t  err,
+                                                                          const char*   request_json)
+                                                    );
+
+    /// Builds a GET_AUTH_RULE request. Request to get authentication rules for a ledger transaction.
+    ///
+    /// NOTE: Either none or all transaction related parameters must be specified (`old_value` can be skipped for `ADD` action).
+    ///     * none - to get all authentication rules for all ledger transactions
+    ///     * all - to get authentication rules for specific action (`old_value` can be skipped for `ADD` action)
+    ///
+    /// #Params
+    /// command_handle: command handle to map callback to caller context.
+    /// submitter_did: (Optional) DID of the read request sender.
+    /// txn_type: (Optional) target ledger transaction alias or associated value.
+    /// action: (Optional) target action type. Can be either "ADD" or "EDIT".
+    /// field: (Optional) target transaction field.
+    /// old_value: (Optional) old value of field, which can be changed to a new_value (must be specified for EDIT action).
+    /// new_value: (Optional) new value that can be used to fill the field.
+    ///
+    /// cb: Callback that takes command result as parameter.
+    ///
+    /// #Returns
+    /// Request result as json.
+    ///
+    /// #Errors
+    /// Common*
+    extern indy_error_t indy_build_get_auth_rule_request(indy_handle_t command_handle,
+                                                         const char *  submitter_did,
+                                                         const char *  txn_type,
+                                                         const char *  action,
+                                                         const char *  field,
+                                                         const char *  old_value,
+                                                         const char *  new_value,
+
+                                                         void           (*cb)(indy_handle_t command_handle_,
+                                                                              indy_error_t  err,
+                                                                              const char*   request_json)
+                                                        );
 
 #ifdef __cplusplus
 }

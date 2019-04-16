@@ -263,6 +263,7 @@ async def build_nym_request(submitter_did: str,
                              TRUSTEE
                              STEWARD
                              TRUST_ANCHOR
+                             NETWORK_MONITOR
                              empty string to reset role
     :return: Request result as json.
     """
@@ -433,7 +434,7 @@ async def build_schema_request(submitter_did: str,
     :param data: Credential schema.
                  {
                      id: identifier of schema
-                     attrNames: array of attribute name strings
+                     attrNames: array of attribute name strings (the number of attributes should be less or equal than 125)
                      name: Schema's name string
                      version: Schema's version string,
                      ver: Version of the Schema json
@@ -1211,4 +1212,187 @@ async def parse_get_revoc_reg_delta_response(get_revoc_reg_delta_response: str) 
 
     res = (revoc_reg_def_id.decode(), revoc_reg_delta_json.decode(), timestamp)
     logger.debug("parse_get_revoc_reg_delta_response: <<< res: %r", res)
+    return res
+
+
+async def get_response_metadata(response: str) -> str:
+    """
+     Parse transaction response to fetch metadata.
+     The important use case for this method is validation of Node's response freshens.
+
+     Distributed Ledgers can reply with outdated information for consequence read request after write.
+     To reduce pool load libindy sends read requests to one random node in the pool.
+     Consensus validation is performed based on validation of nodes multi signature for current ledger Merkle Trie root.
+     This multi signature contains information about the latest ldeger's transaction ordering time and sequence number that this method returns.
+
+     If node that returned response for some reason is out of consensus and has outdated ledger
+     it can be caught by analysis of the returned latest ledger's transaction ordering time and sequence number.
+
+     There are two ways to filter outdated responses:
+         1) based on "seqNo" - sender knows the sequence number of transaction that he consider as a fresh enough.
+         2) based on "txnTime" - sender knows the timestamp that he consider as a fresh enough.
+
+     Note: response of GET_VALIDATOR_INFO request isn't supported
+
+    :param response: response of write or get request.
+    :return: Response Metadata.
+    {
+        "seqNo": Option<u64> - transaction sequence number,
+        "txnTime": Option<u64> - transaction ordering time,
+        "lastSeqNo": Option<u64> - the latest transaction seqNo for particular Node,
+        "lastTxnTime": Option<u64> - the latest transaction ordering time for particular Node
+    }
+    """
+
+    logger = logging.getLogger(__name__)
+    logger.debug("get_response_metadata: >>> response: %r",
+                 response)
+
+    if not hasattr(get_response_metadata, "cb"):
+        logger.debug("get_response_metadata: Creating callback")
+        get_response_metadata.cb = create_cb(CFUNCTYPE(None, c_int32, c_int32, c_char_p))
+
+    c_response = c_char_p(response.encode('utf-8'))
+
+    response_metadata = await do_call('indy_get_response_metadata',
+                                      c_response,
+                                      get_response_metadata.cb)
+
+    res = response_metadata.decode()
+    logger.debug("get_response_metadata: <<< res: %r", res)
+    return res
+
+
+async def build_auth_rule_request(submitter_did: str,
+                                  txn_type: str,
+                                  action: str,
+                                  field: str,
+                                  old_value: Optional[str],
+                                  new_value: str,
+                                  constraint: str) -> str:
+    """
+    Builds a AUTH_RULE request. Request to change authentication rules for a ledger transaction.
+
+    :param submitter_did: DID of the submitter stored in secured Wallet.
+    :param txn_type: ledger transaction alias or associated value.
+    :param action: type of an action.
+       Can be either "ADD" (to add a new rule) or "EDIT" (to edit an existing one).
+    :param field: transaction field.
+    :param old_value: old value of a field, which can be changed to a new_value (mandatory for EDIT action).
+    :param new_value: new value that can be used to fill the field.
+    :param constraint: set of constraints required for execution of an action in the following format:
+        {
+            constraint_id - <string> type of a constraint.
+                Can be either "ROLE" to specify final constraint or  "AND"/"OR" to combine constraints.
+            role - <string> role of a user which satisfy to constrain.
+            sig_count - <u32> the number of signatures required to execution action.
+            need_to_be_owner - <bool> if user must be an owner of transaction.
+            metadata - <object> additional parameters of the constraint.
+        }
+      can be combined by
+        {
+            'constraint_id': <"AND" or "OR">
+            'auth_constraints': [<constraint_1>, <constraint_2>]
+        }
+
+    Default ledger auth rules: https://github.com/hyperledger/indy-node/blob/master/docs/source/auth_rules.md
+
+    More about AUTH_RULE request: https://github.com/hyperledger/indy-node/blob/master/docs/source/requests.md#auth_rule
+
+    :return: Request result as json.
+    """
+
+    logger = logging.getLogger(__name__)
+    logger.debug("build_auth_rule_request: >>> submitter_did: %r, txn_type: %r, action: %r, field: %r, "
+                 "old_value: %r, new_value: %r, constraint: %r",
+                 submitter_did,
+                 txn_type,
+                 action,
+                 field,
+                 old_value,
+                 new_value,
+                 constraint)
+
+    if not hasattr(build_auth_rule_request, "cb"):
+        logger.debug("build_auth_rule_request: Creating callback")
+        build_auth_rule_request.cb = create_cb(CFUNCTYPE(None, c_int32, c_int32, c_char_p))
+
+    c_submitter_did = c_char_p(submitter_did.encode('utf-8'))
+    c_txn_type = c_char_p(txn_type.encode('utf-8'))
+    c_action = c_char_p(action.encode('utf-8'))
+    c_field = c_char_p(field.encode('utf-8'))
+    c_old_value = c_char_p(old_value.encode('utf-8')) if old_value is not None else None
+    c_new_value = c_char_p(new_value.encode('utf-8'))
+    c_constraint = c_char_p(constraint.encode('utf-8'))
+
+    request_json = await do_call('indy_build_auth_rule_request',
+                                 c_submitter_did,
+                                 c_txn_type,
+                                 c_action,
+                                 c_field,
+                                 c_old_value,
+                                 c_new_value,
+                                 c_constraint,
+                                 build_auth_rule_request.cb)
+
+    res = request_json.decode()
+    logger.debug("build_auth_rule_request: <<< res: %r", res)
+    return res
+
+
+async def build_get_auth_rule_request(submitter_did: Optional[str],
+                                      txn_type: Optional[str],
+                                      action: Optional[str],
+                                      field: Optional[str],
+                                      old_value: Optional[str],
+                                      new_value: Optional[str]) -> str:
+    """
+    Builds a GET_AUTH_RULE request. Request to get authentication rules for a ledger transaction.
+
+    NOTE: Either none or all transaction related parameters must be specified (`old_value` can be skipped for `ADD` action).
+        * none - to get all authentication rules for all ledger transactions
+        * all - to get authentication rules for specific action (`old_value` can be skipped for `ADD` action)
+
+    :param submitter_did: (Optional) DID of the read request sender.
+    :param txn_type: target ledger transaction alias or associated value.
+    :param action: target action type. Can be either "ADD" or "EDIT".
+    :param field: target transaction field.
+    :param old_value: old value of field, which can be changed to a new_value (must be specified for EDIT action).
+    :param new_value: new value that can be used to fill the field.
+
+    :return: Request result as json.
+    """
+
+    logger = logging.getLogger(__name__)
+    logger.debug("build_get_auth_rule_request: >>> submitter_did: %r, txn_type: %r, action: %r, field: %r, "
+                 "old_value: %r, new_value: %r",
+                 submitter_did,
+                 txn_type,
+                 action,
+                 field,
+                 old_value,
+                 new_value)
+
+    if not hasattr(build_get_auth_rule_request, "cb"):
+        logger.debug("build_get_auth_rule_request: Creating callback")
+        build_get_auth_rule_request.cb = create_cb(CFUNCTYPE(None, c_int32, c_int32, c_char_p))
+
+    c_submitter_did = c_char_p(submitter_did.encode('utf-8')) if submitter_did is not None else None
+    c_txn_type = c_char_p(txn_type.encode('utf-8')) if txn_type is not None else None
+    c_action = c_char_p(action.encode('utf-8')) if action is not None else None
+    c_field = c_char_p(field.encode('utf-8')) if field is not None else None
+    c_old_value = c_char_p(old_value.encode('utf-8')) if old_value is not None else None
+    c_new_value = c_char_p(new_value.encode('utf-8')) if new_value is not None else None
+
+    request_json = await do_call('indy_build_get_auth_rule_request',
+                                 c_submitter_did,
+                                 c_txn_type,
+                                 c_action,
+                                 c_field,
+                                 c_old_value,
+                                 c_new_value,
+                                 build_get_auth_rule_request.cb)
+
+    res = request_json.decode()
+    logger.debug("build_get_auth_rule_request: <<< res: %r", res)
     return res

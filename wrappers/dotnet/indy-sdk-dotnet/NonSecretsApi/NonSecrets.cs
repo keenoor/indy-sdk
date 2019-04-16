@@ -1,7 +1,7 @@
-﻿using System;
-using System.Threading.Tasks;
-using Hyperledger.Indy.Utils;
+﻿using Hyperledger.Indy.Utils;
 using Hyperledger.Indy.WalletApi;
+using System;
+using System.Threading.Tasks;
 using static Hyperledger.Indy.NonSecretsApi.NativeMethods;
 using static Hyperledger.Indy.Utils.CallbackHelper;
 #if __IOS__
@@ -34,7 +34,7 @@ namespace Hyperledger.Indy.NonSecretsApi
 #if __IOS__
         [MonoPInvokeCallback(typeof(OpenWalletSearchCompletedDelegate))]
 #endif
-        private static void OpenSearchCallbackMethod(int xcommand_handle, int err, IntPtr search_handle)
+        private static void OpenSearchCallbackMethod(int xcommand_handle, int err, int search_handle)
         {
             var taskCompletionSource = PendingCommands.Remove<WalletSearch>(xcommand_handle);
 
@@ -162,6 +162,7 @@ namespace Hyperledger.Indy.NonSecretsApi
             ParamGuard.NotNull(wallet, "wallet");
             ParamGuard.NotNullOrWhiteSpace(type, "type");
             ParamGuard.NotNullOrWhiteSpace(id, "id");
+            ParamGuard.NotNullOrWhiteSpace(tagsJson, "tagsJson");
 
             var taskCompletionSource = new TaskCompletionSource<bool>();
             var commandHandle = PendingCommands.Add(taskCompletionSource);
@@ -204,6 +205,7 @@ namespace Hyperledger.Indy.NonSecretsApi
             ParamGuard.NotNull(wallet, "wallet");
             ParamGuard.NotNullOrWhiteSpace(type, "type");
             ParamGuard.NotNullOrWhiteSpace(id, "id");
+            ParamGuard.NotNullOrWhiteSpace(tagsJson, "tagsJson");
 
             var taskCompletionSource = new TaskCompletionSource<bool>();
             var commandHandle = PendingCommands.Add(taskCompletionSource);
@@ -348,6 +350,7 @@ namespace Hyperledger.Indy.NonSecretsApi
             ParamGuard.NotNull(wallet, "wallet");
             ParamGuard.NotNullOrWhiteSpace(type, "type");
             ParamGuard.NotNullOrWhiteSpace(queryJson, "queryJson");
+            ParamGuard.NotNullOrWhiteSpace(optionsJson, "optionsJson");
 
             var taskCompletionSource = new TaskCompletionSource<WalletSearch>();
             var commandHandle = PendingCommands.Add(taskCompletionSource);

@@ -3,7 +3,7 @@
 extern crate atty;
 extern crate ansi_term;
 extern crate unescape;
-#[macro_use]
+#[cfg(test)]
 extern crate lazy_static;
 extern crate libc;
 extern crate linefeed;
@@ -16,6 +16,7 @@ extern crate serde_derive;
 extern crate serde_json;
 extern crate prettytable;
 extern crate log4rs;
+extern crate indyrs as indy;
 
 #[macro_use]
 mod utils;
@@ -125,6 +126,8 @@ fn build_executor() -> CommandExecutor {
         .add_command(ledger::set_fees_prepare_command::new())
         .add_command(ledger::verify_payment_receipt_command::new())
         .add_command(ledger::sign_multi_command::new())
+        .add_command(ledger::auth_rule_command::new())
+        .add_command(ledger::get_auth_rule_command::new())
         .finalize_group()
         .add_group(payment_address::group::new())
         .add_command(payment_address::create_command::new())
@@ -199,7 +202,7 @@ fn _print_help() {
     println_acc!("\tLoad plugins in Libindy.");
     println_acc!("\tUsage: indy-cli --plugins <lib-1-name>:<init-func-1-name>,...,<lib-n-name>:<init-func-n-name>");
     println!();
-    println_acc!("\tInit logger according to a config file.");
+    println_acc!("\tInit logger according to a config file. \n\tIndy Cli uses `log4rs` logging framework: https://crates.io/crates/log4rs");
     println_acc!("\tUsage: indy-cli --logger-config <path-to-config-file>");
     println!();
 }

@@ -14,7 +14,8 @@ extern crate serde_derive;
 extern crate serde_json;
 
 extern crate byteorder;
-extern crate indy;
+extern crate indyrs as indy;
+extern crate indyrs as api;
 extern crate indy_crypto;
 extern crate uuid;
 extern crate named_type;
@@ -22,9 +23,6 @@ extern crate rmp_serde;
 extern crate rust_base58;
 extern crate time;
 extern crate serde;
-
-// Workaround to share some utils code based on indy sdk types between tests and indy sdk
-use indy::api as api;
 
 #[macro_use]
 mod utils;
@@ -36,7 +34,7 @@ use utils::types::{WalletRecord, SearchRecords};
 
 use std::collections::HashMap;
 
-use indy::api::ErrorCode;
+use self::indy::ErrorCode;
 
 pub const FORBIDDEN_TYPE: &'static str = "Indy::Test";
 
@@ -72,7 +70,7 @@ mod high_cases {
             add_wallet_record(wallet_handle, TYPE, ID, VALUE, None).unwrap();
 
             let res = add_wallet_record(wallet_handle, TYPE, ID, VALUE, None);
-            assert_eq!(ErrorCode::WalletItemAlreadyExists, res.unwrap_err());
+            assert_code!(ErrorCode::WalletItemAlreadyExists, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -112,7 +110,7 @@ mod high_cases {
             let wallet_handle = utils::setup_with_wallet();
 
             let res = add_wallet_record(wallet_handle, FORBIDDEN_TYPE, ID, VALUE, None);
-            assert_eq!(Err(ErrorCode::WalletAccessFailed), res);
+            assert_code!(ErrorCode::WalletAccessFailed, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -122,7 +120,7 @@ mod high_cases {
             let wallet_handle = utils::setup_with_wallet();
 
             let res = add_wallet_record(wallet_handle + 1, TYPE, ID, VALUE, None);
-            assert_eq!(ErrorCode::WalletInvalidHandle, res.unwrap_err());
+            assert_code!(ErrorCode::WalletInvalidHandle, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -132,7 +130,7 @@ mod high_cases {
             let wallet_handle = utils::setup_with_wallet();
 
             let res = add_wallet_record(wallet_handle, TYPE, ID, VALUE, Some(r#"tag:1"#));
-            assert_eq!(ErrorCode::CommonInvalidStructure, res.unwrap_err());
+            assert_code!(ErrorCode::CommonInvalidStructure, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -142,13 +140,13 @@ mod high_cases {
             let wallet_handle = utils::setup_with_wallet();
 
             let res = add_wallet_record(wallet_handle, "", ID, VALUE, None);
-            assert_eq!(ErrorCode::CommonInvalidParam3, res.unwrap_err());
+            assert_code!(ErrorCode::CommonInvalidParam3, res);
 
             let res = add_wallet_record(wallet_handle, TYPE, "", VALUE, None);
-            assert_eq!(ErrorCode::CommonInvalidParam4, res.unwrap_err());
+            assert_code!(ErrorCode::CommonInvalidParam4, res);
 
             let res = add_wallet_record(wallet_handle, TYPE, ID, "", None);
-            assert_eq!(ErrorCode::CommonInvalidParam5, res.unwrap_err());
+            assert_code!(ErrorCode::CommonInvalidParam5, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -188,7 +186,7 @@ mod high_cases {
             let wallet_handle = utils::setup_with_wallet();
 
             let res = update_wallet_record_value(wallet_handle, TYPE, ID, VALUE);
-            assert_eq!(ErrorCode::WalletItemNotFound, res.unwrap_err());
+            assert_code!(ErrorCode::WalletItemNotFound, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -200,7 +198,7 @@ mod high_cases {
             add_wallet_record(wallet_handle, TYPE, ID, VALUE, None).unwrap();
 
             let res = update_wallet_record_value(wallet_handle + 1, TYPE, ID, VALUE_2);
-            assert_eq!(ErrorCode::WalletInvalidHandle, res.unwrap_err());
+            assert_code!(ErrorCode::WalletInvalidHandle, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -212,7 +210,7 @@ mod high_cases {
             add_wallet_record(wallet_handle, TYPE, ID, VALUE, None).unwrap();
 
             let res = update_wallet_record_value(wallet_handle, TYPE, ID, "");
-            assert_eq!(ErrorCode::CommonInvalidParam5, res.unwrap_err());
+            assert_code!(ErrorCode::CommonInvalidParam5, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -222,7 +220,7 @@ mod high_cases {
             let wallet_handle = utils::setup_with_wallet();
 
             let res = update_wallet_record_value(wallet_handle, FORBIDDEN_TYPE, ID, VALUE);
-            assert_eq!(ErrorCode::WalletAccessFailed, res.unwrap_err());
+            assert_code!(ErrorCode::WalletAccessFailed, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -265,7 +263,7 @@ mod high_cases {
             let wallet_handle = utils::setup_with_wallet();
 
             let res = update_wallet_record_tags(wallet_handle, TYPE, ID, TAGS);
-            assert_eq!(ErrorCode::WalletItemNotFound, res.unwrap_err());
+            assert_code!(ErrorCode::WalletItemNotFound, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -277,7 +275,7 @@ mod high_cases {
             add_wallet_record(wallet_handle, TYPE, ID, VALUE, None).unwrap();
 
             let res = update_wallet_record_tags(wallet_handle, TYPE, ID, "");
-            assert_eq!(ErrorCode::CommonInvalidParam5, res.unwrap_err());
+            assert_code!(ErrorCode::CommonInvalidParam5, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -289,7 +287,7 @@ mod high_cases {
             add_wallet_record(wallet_handle, TYPE, ID, VALUE, None).unwrap();
 
             let res = update_wallet_record_tags(wallet_handle + 1, TYPE, ID, TAGS);
-            assert_eq!(ErrorCode::WalletInvalidHandle, res.unwrap_err());
+            assert_code!(ErrorCode::WalletInvalidHandle, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -299,7 +297,7 @@ mod high_cases {
             let wallet_handle = utils::setup_with_wallet();
 
             let res = update_wallet_record_tags(wallet_handle, FORBIDDEN_TYPE, ID, TAGS);
-            assert_eq!(ErrorCode::WalletAccessFailed, res.unwrap_err());
+            assert_code!(ErrorCode::WalletAccessFailed, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -375,7 +373,7 @@ mod high_cases {
             let wallet_handle = utils::setup_with_wallet();
 
             let res = add_wallet_record_tags(wallet_handle, TYPE, ID, TAGS);
-            assert_eq!(ErrorCode::WalletItemNotFound, res.unwrap_err());
+            assert_code!(ErrorCode::WalletItemNotFound, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -387,7 +385,7 @@ mod high_cases {
             add_wallet_record(wallet_handle, TYPE, ID, VALUE, None).unwrap();
 
             let res = add_wallet_record_tags(wallet_handle + 1, TYPE, ID, TAGS);
-            assert_eq!(ErrorCode::WalletInvalidHandle, res.unwrap_err());
+            assert_code!(ErrorCode::WalletInvalidHandle, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -397,7 +395,7 @@ mod high_cases {
             let wallet_handle = utils::setup_with_wallet();
 
             let res = add_wallet_record_tags(wallet_handle, FORBIDDEN_TYPE, ID, TAGS);
-            assert_eq!(ErrorCode::WalletAccessFailed, res.unwrap_err());
+            assert_code!(ErrorCode::WalletAccessFailed, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -438,7 +436,7 @@ mod high_cases {
             let wallet_handle = utils::setup_with_wallet();
 
             let res = delete_wallet_record_tags(wallet_handle, TYPE, ID, r#"["tagName1"]"#);
-            assert_eq!(ErrorCode::WalletItemNotFound, res.unwrap_err());
+            assert_code!(ErrorCode::WalletItemNotFound, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -486,7 +484,7 @@ mod high_cases {
             let wallet_handle = utils::setup_with_wallet();
 
             let res = delete_wallet_record_tags(wallet_handle + 1, TYPE, ID, r#"["tagName1"]"#);
-            assert_eq!(ErrorCode::WalletInvalidHandle, res.unwrap_err());
+            assert_code!(ErrorCode::WalletInvalidHandle, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -496,7 +494,7 @@ mod high_cases {
             let wallet_handle = utils::setup_with_wallet();
 
             let res = delete_wallet_record_tags(wallet_handle, FORBIDDEN_TYPE, ID, r#"["tagName1"]"#);
-            assert_eq!(ErrorCode::WalletAccessFailed, res.unwrap_err());
+            assert_code!(ErrorCode::WalletAccessFailed, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -516,7 +514,7 @@ mod high_cases {
             delete_wallet_record(wallet_handle, TYPE, ID).unwrap();
 
             let res = get_wallet_record(wallet_handle, TYPE, ID, OPTIONS_EMPTY);
-            assert_eq!(ErrorCode::WalletItemNotFound, res.unwrap_err());
+            assert_code!(ErrorCode::WalletItemNotFound, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -526,7 +524,7 @@ mod high_cases {
             let wallet_handle = utils::setup_with_wallet();
 
             let res = delete_wallet_record(wallet_handle, TYPE, ID);
-            assert_eq!(ErrorCode::WalletItemNotFound, res.unwrap_err());
+            assert_code!(ErrorCode::WalletItemNotFound, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -542,7 +540,7 @@ mod high_cases {
             delete_wallet_record(wallet_handle, TYPE, ID).unwrap();
 
             let res = delete_wallet_record(wallet_handle, TYPE, ID);
-            assert_eq!(ErrorCode::WalletItemNotFound, res.unwrap_err());
+            assert_code!(ErrorCode::WalletItemNotFound, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -554,7 +552,7 @@ mod high_cases {
             add_wallet_record(wallet_handle, TYPE, ID, VALUE, None).unwrap();
 
             let res = delete_wallet_record(wallet_handle + 1, TYPE, ID);
-            assert_eq!(ErrorCode::WalletInvalidHandle, res.unwrap_err());
+            assert_code!(ErrorCode::WalletInvalidHandle, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -564,10 +562,10 @@ mod high_cases {
             let wallet_handle = utils::setup_with_wallet();
 
             let res = delete_wallet_record(wallet_handle, "", ID);
-            assert_eq!(ErrorCode::CommonInvalidParam3, res.unwrap_err());
+            assert_code!(ErrorCode::CommonInvalidParam3, res);
 
             let res = delete_wallet_record(wallet_handle, TYPE, "");
-            assert_eq!(ErrorCode::CommonInvalidParam4, res.unwrap_err());
+            assert_code!(ErrorCode::CommonInvalidParam4, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -577,7 +575,7 @@ mod high_cases {
             let wallet_handle = utils::setup_with_wallet();
 
             let res = delete_wallet_record(wallet_handle, FORBIDDEN_TYPE, ID);
-            assert_eq!(ErrorCode::WalletAccessFailed, res.unwrap_err());
+            assert_code!(ErrorCode::WalletAccessFailed, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -704,7 +702,7 @@ mod high_cases {
             let wallet_handle = utils::setup_with_wallet();
 
             let res = get_wallet_record(wallet_handle, TYPE, ID, OPTIONS_EMPTY);
-            assert_eq!(ErrorCode::WalletItemNotFound, res.unwrap_err());
+            assert_code!(ErrorCode::WalletItemNotFound, res);
 
             wallet::close_wallet(wallet_handle).unwrap();
 
@@ -718,7 +716,7 @@ mod high_cases {
             add_wallet_record(wallet_handle, TYPE, ID, VALUE, None).unwrap();
 
             let res = get_wallet_record(wallet_handle, TYPE, ID, "not_json");
-            assert_eq!(ErrorCode::CommonInvalidStructure, res.unwrap_err());
+            assert_code!(ErrorCode::CommonInvalidStructure, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -728,7 +726,7 @@ mod high_cases {
             let wallet_handle = utils::setup_with_wallet();
 
             let res = get_wallet_record(wallet_handle, FORBIDDEN_TYPE, ID, OPTIONS_EMPTY);
-            assert_eq!(ErrorCode::WalletAccessFailed, res.unwrap_err());
+            assert_code!(ErrorCode::WalletAccessFailed, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -1212,7 +1210,7 @@ mod high_cases {
             let wallet_handle = setup();
 
             let res = open_wallet_search(wallet_handle + 1, TYPE, QUERY_EMPTY, OPTIONS_EMPTY);
-            assert_eq!(ErrorCode::WalletInvalidHandle, res.unwrap_err());
+            assert_code!(ErrorCode::WalletInvalidHandle, res);
 
             wallet::close_wallet(wallet_handle).unwrap();
         }
@@ -1224,7 +1222,7 @@ mod high_cases {
             let search_handle = open_wallet_search(wallet_handle, TYPE, QUERY_EMPTY, OPTIONS_EMPTY).unwrap();
 
             let res = fetch_wallet_search_next_records(wallet_handle, search_handle + 1, 5);
-            assert_eq!(ErrorCode::WalletInvalidHandle, res.unwrap_err());
+            assert_code!(ErrorCode::WalletInvalidHandle, res);
 
             tear_down(wallet_handle, search_handle);
         }
@@ -1234,7 +1232,7 @@ mod high_cases {
             let wallet_handle = setup();
 
             let res = open_wallet_search(wallet_handle, FORBIDDEN_TYPE, QUERY_EMPTY, OPTIONS_EMPTY);
-            assert_eq!(ErrorCode::WalletAccessFailed, res.unwrap_err());
+            assert_code!(ErrorCode::WalletAccessFailed, res);
 
             wallet::close_wallet(wallet_handle).unwrap();
         }
@@ -1259,7 +1257,7 @@ mod high_cases {
                 let search_handle = open_wallet_search(wallet_handle, TYPE, QUERY_EMPTY, OPTIONS_EMPTY).unwrap();
 
                 let res = close_wallet_search(search_handle + 1);
-                assert_eq!(ErrorCode::WalletInvalidHandle, res.unwrap_err());
+                assert_code!(ErrorCode::WalletInvalidHandle, res);
 
                 close_wallet_search(search_handle).unwrap();
                 wallet::close_wallet(wallet_handle).unwrap();
@@ -1274,7 +1272,7 @@ mod high_cases {
                 close_wallet_search(search_handle).unwrap();
 
                 let res = close_wallet_search(search_handle);
-                assert_eq!(ErrorCode::WalletInvalidHandle, res.unwrap_err());
+                assert_code!(ErrorCode::WalletInvalidHandle, res);
 
                 wallet::close_wallet(wallet_handle).unwrap();
             }

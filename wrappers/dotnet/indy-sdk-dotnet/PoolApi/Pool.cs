@@ -20,7 +20,7 @@ namespace Hyperledger.Indy.PoolApi
 #if __IOS__
         [MonoPInvokeCallback(typeof(OpenPoolLedgerCompletedDelegate))]
 #endif
-        private static void OpenPoolLedgerCallbackMethod(int command_handle, int err, IntPtr pool_handle)
+        private static void OpenPoolLedgerCallbackMethod(int command_handle, int err, int pool_handle)
         {
             var taskCompletionSource = PendingCommands.Remove<Pool>(command_handle);
 
@@ -69,7 +69,11 @@ namespace Hyperledger.Indy.PoolApi
         /// <seealso cref="OpenPoolLedgerAsync(string, string)"/>
         /// <seealso cref="DeletePoolLedgerConfigAsync(string)"/>
         /// <param name="configName">The name for the configuration.</param>
-        /// <param name="config">The configuration JSON.</param>
+        /// <param name="config">Pool configuration json. if NULL, then default config will be used. Example:
+        /// {
+        ///     "genesis_txn": string (optional), A path to genesis transaction file. If NULL, then a default one will be used.
+        ///                    If file doesn't exists default one will be created.
+        /// }</param>
         /// <returns>An asynchronous <see cref="Task{T}"/> with no return value that completes when
         /// the configuration is created.</returns>
         public static Task CreatePoolLedgerConfigAsync(string configName, string config)
@@ -190,13 +194,13 @@ namespace Hyperledger.Indy.PoolApi
         /// <summary>
         /// Gets the handle for the pool.
         /// </summary>
-        internal IntPtr Handle { get; }
+        internal int Handle { get; }
 
         /// <summary>
         /// Initializes a new Pool instance with the specified handle.
         /// </summary>
         /// <param name="handle">The handle of the underlying unmanaged pool.</param>
-        private Pool(IntPtr handle)
+        private Pool(int handle)
         {
             Handle = handle;
             _requiresClose = true;

@@ -1,11 +1,20 @@
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::collections::VecDeque;
+use std::marker::PhantomData;
+use std::rc::Rc;
+use std::thread;
+use std::thread::JoinHandle;
+
+use failure::Context;
+
 use commands::Command;
 use commands::CommandExecutor;
 use commands::ledger::LedgerCommand;
 use commands::pool::PoolCommand;
 use domain::ledger::request::ProtocolVersion;
 use domain::pool::PoolOpenConfig;
-use errors::common::CommonError;
-use errors::pool::PoolError;
+use errors::prelude::*;
 use services::ledger::merkletree::merkletree::MerkleTree;
 use services::pool::commander::Commander;
 use services::pool::events::*;
@@ -14,17 +23,10 @@ use services::pool::networker::{Networker, ZMQNetworker};
 use services::pool::request_handler::{RequestHandler, RequestHandlerImpl};
 use services::pool::rust_base58::{FromBase58, ToBase58};
 use services::pool::types::{LedgerStatus, RemoteNode};
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::collections::VecDeque;
-use std::marker::PhantomData;
-use std::rc::Rc;
-use std::thread;
-use std::thread::JoinHandle;
-use super::indy_crypto::bls::VerKey;
-use super::zmq;
 use utils::crypto::ed25519_sign;
 
+use super::indy_crypto::bls::VerKey;
+use super::zmq;
 
 struct PoolSM<T: Networker, R: RequestHandler<T>> {
     pool_name: String,
@@ -303,6 +305,17 @@ impl<T: Networker, R: RequestHandler<T>> PoolSM<T, R> {
                         CommandExecutor::instance().send(Command::Pool(pc)).unwrap();
                         PoolState::Terminated(state.into())
                     }
+                    PoolEvent::CatchupRestart(merkle_tree) => {
+                        if let Ok((nodes, remotes)) = _get_nodes_and_remotes(&merkle_tree) {
+                            state.networker.borrow_mut().process_event(Some(NetworkerEvent::NodesStateUpdated(remotes)));
+                            state.request_handler = R::new(state.networker.clone(), _get_f(nodes.len()), &vec![], &nodes, None, &pool_name, timeout, extended_timeout);
+                            let ls = _ledger_status(&merkle_tree);
+                            state.request_handler.process_event(Some(RequestEvent::LedgerStatus(ls, None, Some(merkle_tree))));
+                            PoolState::GettingCatchupTarget(state)
+                        } else {
+                            PoolState::Terminated(state.into())
+                        }
+                    }
                     PoolEvent::CatchupTargetFound(target_mt_root, target_mt_size, merkle_tree) => {
                         if let Ok((nodes, remotes)) = _get_nodes_and_remotes(&merkle_tree) {
                             state.networker.borrow_mut().process_event(Some(NetworkerEvent::NodesStateUpdated(remotes)));
@@ -374,7 +387,7 @@ impl<T: Networker, R: RequestHandler<T>> PoolSM<T, R> {
                                 state.request_handlers.insert(req_id.to_string(), request_handler); //FIXME check already exists
                             }
                             None => {
-                                let res = Err(PoolError::CommonError(CommonError::InvalidStructure("Request id not found".to_string())));
+                                let res = Err(err_msg(IndyErrorKind::InvalidStructure, "Request id not found"));
                                 _send_submit_ack(cmd_id, res)
                             }
                         };
@@ -458,7 +471,7 @@ pub struct Pool<S: Networker, R: RequestHandler<S>> {
     extended_timeout: i64,
     active_timeout: i64,
     conn_limit: usize,
-    preordered_nodes: Vec<String>
+    preordered_nodes: Vec<String>,
 }
 
 impl<S: Networker, R: RequestHandler<S>> Pool<S, R> {
@@ -473,7 +486,7 @@ impl<S: Networker, R: RequestHandler<S>> Pool<S, R> {
             extended_timeout: config.extended_timeout,
             active_timeout: config.conn_active_timeout,
             conn_limit: config.conn_limit,
-            preordered_nodes: config.preordered_nodes
+            preordered_nodes: config.preordered_nodes,
         }
     }
 
@@ -586,8 +599,9 @@ fn _get_f(cnt: usize) -> usize {
     (cnt - 1) / 3
 }
 
-fn _get_request_handler_with_ledger_status_sent<T: Networker, R: RequestHandler<T>>(networker: Rc<RefCell<T>>, pool_name: &str, timeout: i64, extended_timeout: i64) -> Result<R, PoolError> {
+fn _get_request_handler_with_ledger_status_sent<T: Networker, R: RequestHandler<T>>(networker: Rc<RefCell<T>>, pool_name: &str, timeout: i64, extended_timeout: i64) -> IndyResult<R> {
     let mut merkle = merkle_tree_factory::create(pool_name)?;
+
     let (nodes, remotes) = match _get_nodes_and_remotes(&merkle) {
         Ok(n) => n,
         Err(err) => {
@@ -602,38 +616,47 @@ fn _get_request_handler_with_ledger_status_sent<T: Networker, R: RequestHandler<
     };
     networker.borrow_mut().process_event(Some(NetworkerEvent::NodesStateUpdated(remotes)));
     let mut request_handler = R::new(networker.clone(), _get_f(nodes.len()), &vec![], &nodes, None, pool_name, timeout, extended_timeout);
+    let ls = _ledger_status(&merkle);
+    request_handler.process_event(Some(RequestEvent::LedgerStatus(ls, None, Some(merkle))));
+    Ok(request_handler)
+}
+
+fn _ledger_status(merkle: &MerkleTree) -> LedgerStatus{
     let protocol_version = ProtocolVersion::get();
-    let ls = LedgerStatus {
+
+    LedgerStatus {
         txnSeqNo: merkle.count(),
         merkleRoot: merkle.root_hash().as_slice().to_base58(),
         ledgerId: 0,
         ppSeqNo: None,
         viewNo: None,
         protocolVersion: if protocol_version > 1 { Some(protocol_version) } else { None },
-    };
-    request_handler.process_event(Some(RequestEvent::LedgerStatus(ls, None, Some(merkle))));
-    Ok(request_handler)
+    }
 }
 
-fn _get_nodes_and_remotes(merkle: &MerkleTree) -> Result<(HashMap<String, Option<VerKey>>, Vec<RemoteNode>), PoolError> {
+fn _get_nodes_and_remotes(merkle: &MerkleTree) -> IndyResult<(HashMap<String, Option<VerKey>>, Vec<RemoteNode>)> {
     let nodes = merkle_tree_factory::build_node_state(merkle)?;
 
     Ok(nodes.iter().map(|(_, txn)| {
         let node_alias = txn.txn.data.data.alias.clone();
-        let node_verkey = txn.txn.data.dest.as_str().from_base58()
-            .map_err(|err| CommonError::InvalidStructure(format!("Invalid field dest in genesis transaction: {:?}", err)))?;
+
+        let node_verkey = txn.txn.data.dest
+            .as_str()
+            .from_base58()
+            .map_err(|err| Context::new(err))
+            .to_indy(IndyErrorKind::InvalidStructure, "Invalid field dest in genesis transaction")?;
 
         let node_verkey = ed25519_sign::PublicKey::from_slice(&node_verkey)
             .and_then(|vk| ed25519_sign::vk_to_curve25519(&vk))
-            .map_err(|err| CommonError::InvalidStructure(format!("Invalid field dest in genesis transaction: {:?}", err)))?;
+            .to_indy(IndyErrorKind::InvalidStructure, "Invalid field dest in genesis transaction")?;
 
         if txn.txn.data.data.services.is_none() || !txn.txn.data.data.services.as_ref().unwrap().contains(&"VALIDATOR".to_string()) {
-            return Err(PoolError::CommonError(CommonError::InvalidState("Node is not a Validator".to_string())));
+            return Err(err_msg(IndyErrorKind::InvalidState, "Node is not a validator")); // FIXME: review error kind
         }
 
         let address = match (&txn.txn.data.data.client_ip, &txn.txn.data.data.client_port) {
             (&Some(ref client_ip), &Some(ref client_port)) => format!("tcp://{}:{}", client_ip, client_port),
-            _ => return Err(PoolError::CommonError(CommonError::InvalidState("Client address not found".to_string())))
+            _ => return Err(err_msg(IndyErrorKind::InvalidState, "Client address not found")),
         };
 
         let remote = RemoteNode {
@@ -643,14 +666,19 @@ fn _get_nodes_and_remotes(merkle: &MerkleTree) -> Result<(HashMap<String, Option
             zaddr: address,
             is_blacklisted: false,
         };
+
         let verkey: Option<VerKey> = match txn.txn.data.data.blskey {
             Some(ref blskey) => {
-                let key = blskey.as_str().from_base58()
-                    .map_err(|err| { CommonError::InvalidStructure(format!("Invalid field blskey in genesis transaction: {:?}", err)) })?;
-                Some(VerKey::from_bytes(key.as_slice())
-                    .map_err(|err| { CommonError::InvalidStructure(format!("Invalid field blskey in genesis transaction: {:?}", err)) })?)
-            }
-            None => None
+                let key = blskey
+                    .as_str()
+                    .from_base58()
+                    .map_err(|err| Context::new(err))
+                    .to_indy(IndyErrorKind::InvalidStructure, "Invalid field blskey in genesis transaction")?;
+
+                Some(VerKey::from_bytes(&key)
+                    .to_indy(IndyErrorKind::InvalidStructure, "Invalid field blskey in genesis transaction")?)
+            },
+            None => None,
         };
         Ok(((node_alias, verkey), remote))
     }
@@ -675,7 +703,7 @@ fn _close_pool_ack(cmd_id: i32) {
     CommandExecutor::instance().send(Command::Pool(pc)).unwrap();
 }
 
-fn _send_submit_ack(cmd_id: i32, res: Result<String, PoolError>) {
+fn _send_submit_ack(cmd_id: i32, res: IndyResult<String>) {
     let lc = LedgerCommand::SubmitAck(cmd_id.clone(), res);
     CommandExecutor::instance().send(Command::Ledger(lc)).unwrap();
 }
@@ -726,8 +754,9 @@ mod tests {
     use services::pool::networker::MockNetworker;
     use services::pool::request_handler::tests::MockRequestHandler;
     use services::pool::types::{Message, Reply, ReplyResultV1, ReplyTxnV1, ReplyV1, ResponseMetadata};
-    use super::*;
     use utils::test;
+
+    use super::*;
 
     mod pool {
         use super::*;
@@ -754,13 +783,14 @@ mod tests {
     }
 
     mod pool_sm {
-        use super::*;
-
-        use serde_json;
         use std::fs;
         use std::io::Write;
 
+        use serde_json;
+
         use utils::environment;
+
+        use super::*;
 
         const POOL: &'static str = "pool";
 
@@ -865,7 +895,7 @@ mod tests {
 
             let p: PoolSM<MockNetworker, MockRequestHandler> = PoolSM::new(Rc::new(RefCell::new(MockNetworker::new(0, 0, vec![]))), POOL, 1, 0, 0);
             let p = p.handle_event(PoolEvent::CheckCache(1));
-            let p = p.handle_event(PoolEvent::CatchupTargetNotFound(PoolError::Timeout));
+            let p = p.handle_event(PoolEvent::CatchupTargetNotFound(err_msg(IndyErrorKind::PoolTimeout, "Pool timeout")));
             assert_match!(PoolState::Terminated(_), p.state);
 
             test::cleanup_storage();
@@ -1087,6 +1117,35 @@ mod tests {
             match p.state {
                 PoolState::Active(state) => {
                     assert_eq!(state.request_handlers.len(), 0);
+                }
+                _ => assert!(false)
+            };
+
+            test::cleanup_storage();
+        }
+
+        #[test]
+        pub fn pool_wrapper_sends_requests_to_two_nodes() {
+            test::cleanup_storage();
+
+            ProtocolVersion::set(2);
+            _write_genesis_txns();
+
+            let req = json!({
+                "reqId": 1,
+                "operation": {
+                    "type": "105"
+                }
+            }).to_string();
+
+            let p: PoolSM<MockNetworker, MockRequestHandler> = PoolSM::new(Rc::new(RefCell::new(MockNetworker::new(0, 0, vec![]))), POOL, 1, 0, 0);
+            let p = p.handle_event(PoolEvent::CheckCache(1));
+            let p = p.handle_event(PoolEvent::Synced(MerkleTree::from_vec(vec![]).unwrap()));
+            let p = p.handle_event(PoolEvent::SendRequest(3, req, None, None));
+            assert_match!(PoolState::Active(_), p.state);
+            match p.state {
+                PoolState::Active(state) => {
+                    assert_eq!(state.networker.borrow().events.len(), 2);
                 }
                 _ => assert!(false)
             };

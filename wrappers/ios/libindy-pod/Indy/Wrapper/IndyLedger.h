@@ -108,6 +108,7 @@
                                  TRUSTEE
                                  STEWARD
                                  TRUST_ANCHOR
+                                 NETWORK_MONITOR
                                  empty string to reset role
  @param completion Callback that takes command result as parameter. Returns request result as json.
  */
@@ -185,7 +186,7 @@
  @param data  Credential schema.
               {
                   id: identifier of schema
-                  attrNames: array of attribute name strings
+                  attrNames: array of attribute name strings (the number of attributes should be less or equal than 125)
                   name: Schema's name string
                   version: Schema's version string,
                   ver: Version of the Schema json
@@ -567,5 +568,102 @@
  */
 + (void)parseGetRevocRegDeltaResponse:(NSString *)getRevocRegDeltaResponse
                            completion:(void (^)(NSError *error, NSString *revocRegDefId, NSString *revocRegDeltaJson, NSNumber *timestamp))completion;
+
+// MARK: - Auth Rule request
+
+/**
+ Builds a AUTH_RULE request. Request to change authentication rules for a ledger transaction.
+
+ @param submitterDid DID of the submitter stored in secured Wallet.
+ @param txnType - ledger transaction alias or associated value.
+ @param action - type of an action.
+          Can be either "ADD" (to add a new rule) or "EDIT" (to edit an existing one).
+ @param field - transaction field.
+ @param oldValue - old value of a field, which can be changed to a new_value (mandatory for EDIT action).
+ @param newValue - new value that can be used to fill the field.
+ @param constraint - set of constraints required for execution of an action in the following format:
+        {
+            constraint_id - <string> type of a constraint.
+                Can be either "ROLE" to specify final constraint or  "AND"/"OR" to combine constraints.
+            role - <string> role of a user which satisfy to constrain.
+            sig_count - <u32> the number of signatures required to execution action.
+            need_to_be_owner - <bool> if user must be an owner of transaction.
+            metadata - <object> additional parameters of the constraint.
+        }
+      can be combined by
+        {
+            'constraint_id': <"AND" or "OR">
+            'auth_constraints': [<constraint_1>, <constraint_2>]
+        }
+
+ Default ledger auth rules: https://github.com/hyperledger/indy-node/blob/master/docs/source/auth_rules.md
+
+ More about AUTH_RULE request: https://github.com/hyperledger/indy-node/blob/master/docs/source/requests.md#auth_rule
+
+ @param completion Callback that takes command result as parameter. Returns request result as json.
+ */
++ (void)buildAuthRuleRequestWithSubmitterDid:(NSString *)submitterDid
+                                     txnType:(NSString *)txnType
+                                      action:(NSString *)action
+                                       field:(NSString *)field
+                                    oldValue:(NSString *)oldValue
+                                    newValue:(NSString *)newValue
+                                  constraint:(NSString *)constraint
+                                  completion:(void (^)(NSError *error, NSString *requestJSON))completion;
+
+/**
+ Builds a GET_AUTH_RULE request. Request to get authentication rules for ledger transactions.
+
+ NOTE: Either none or all transaction related parameters must be specified (`old_value` can be skipped for `ADD` action).
+     * none - to get all authentication rules for all ledger transactions
+     * all - to get authentication rules for specific action (`old_value` can be skipped for `ADD` action)
+
+ @param submitterDid (Optional) DID of the submitter stored in secured Wallet.
+ @param txnType - (Optional) target ledger transaction alias or associated value.
+ @param action - (Optional) target action type. Can be either "ADD" or "EDIT".
+ @param field - (Optional) target transaction field.
+ @param oldValue - (Optional) old value of field, which can be changed to a new_value (must be specified for EDIT action).
+ @param newValue - (Optional) new value that can be used to fill the field.
+
+ @param completion Callback that takes command result as parameter. Returns request result as json.
+ */
++ (void)buildGetAuthRuleRequestWithSubmitterDid:(NSString *)submitterDid
+                                        txnType:(NSString *)txnType
+                                         action:(NSString *)action
+                                          field:(NSString *)field
+                                       oldValue:(NSString *)oldValue
+                                       newValue:(NSString *)newValue
+                                     completion:(void (^)(NSError *error, NSString *requestJSON))completion;
+
+/**
+ Parse transaction response to fetch metadata.
+ The important use case for this method is validation of Node's response freshens.
+
+ Distributed Ledgers can reply with outdated information for consequence read request after write.
+ To reduce pool load libindy sends read requests to one random node in the pool.
+ Consensus validation is performed based on validation of nodes multi signature for current ledger Merkle Trie root.
+ This multi signature contains information about the latest ldeger's transaction ordering time and sequence number that this method returns.
+
+ If node that returned response for some reason is out of consensus and has outdated ledger
+ it can be caught by analysis of the returned latest ledger's transaction ordering time and sequence number.
+
+ There are two ways to filter outdated responses:
+     1) based on "seqNo" - sender knows the sequence number of transaction that he consider as a fresh enough.
+     2) based on "txnTime" - sender knows the timestamp that he consider as a fresh enough.
+
+ Note: response of GET_VALIDATOR_INFO request isn't supported
+
+ @param response esponse of write or get request.
+ @param completion Callback that takes command result as parameter.
+ Returns Response Metadata
+     {
+         "seqNo": Option<u64> - transaction sequence number,
+         "txnTime": Option<u64> - transaction ordering time,
+         "lastSeqNo": Option<u64> - the latest transaction seqNo for particular Node,
+         "lastTxnTime": Option<u64> - the latest transaction ordering time for particular Node
+     }
+ */
++ (void)getResponseMetadata:(NSString *)response
+                 completion:(void (^)(NSError *error, NSString *responseMetadata))completion;
 
 @end

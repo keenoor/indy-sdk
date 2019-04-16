@@ -1,17 +1,11 @@
 package com.evernym.sdk.vcx;
 
-
-import com.sun.jna.Callback;
-import com.sun.jna.Library;
-import com.sun.jna.Native;
-import com.sun.jna.NativeLibrary;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.sun.jna.*;
+import com.sun.jna.ptr.PointerByReference;
 
 import java.io.File;
 
 public abstract class LibVcx {
-    private static final Logger logger = LoggerFactory.getLogger("LibVcx");
     private static final String LIBRARY_NAME = "vcx";
     /*
      * Native library interface
@@ -37,7 +31,7 @@ public abstract class LibVcx {
      * Helper API for testing purposes.
      */
         public void vcx_set_next_agency_response(int msg);
-
+        public void vcx_get_current_error(PointerByReference error);
 
     /**
      * Schema object
@@ -143,7 +137,7 @@ public abstract class LibVcx {
      */
 
         /** Creates a credential object from the specified credentialdef handle. Populates a handle the new credential. */
-        public int vcx_issuer_create_credential(int command_handle, String source_id, String cred_def_id, String issuer_did, String credential_data, String credential_name, long price, Callback cb);
+        public int vcx_issuer_create_credential(int command_handle, String source_id, int cred_def_handle, String issuer_did, String credential_data, String credential_name, String price, Callback cb);
 
         /** Asynchronously sends the credential offer to the connection. */
         public int vcx_issuer_send_credential_offer(int command_handle, int credential_handle, int connection_handle, Callback cb);
@@ -185,7 +179,7 @@ public abstract class LibVcx {
         /**
          * Creates a proof object.  Populates a handle to the new proof.
          */
-        public int vcx_proof_create(int command_handle, String source_id, String requested_attrs, String requested_predicates, String name, Callback cb);
+        public int vcx_proof_create(int command_handle, String source_id, String requested_attrs, String requested_predicates, String revocationInterval, String name, Callback cb);
 
         /**
          * Asynchronously send a proof request to the connection.
@@ -415,6 +409,13 @@ public abstract class LibVcx {
         /** Retrieves cred_def_id from credentialdef object. */
         int vcx_credentialdef_get_cred_def_id(int command_handle, int cred_def_handle, Callback cb);
 
+        /**
+         * logger
+         *
+         */
+
+        /** Set custom logger implementation.. */
+        int vcx_set_logger(Pointer context, Callback enabled, Callback log, Callback flush);
 
     }
 
@@ -427,11 +428,8 @@ public abstract class LibVcx {
     static {
 
         try {
-
-            logger.info("static initializer: initializing libvcx binary.");
             init();
         } catch (UnsatisfiedLinkError ex) {
-            logger.error("static initializer: ", ex.getMessage());
             // Library could not be found in standard OS locations.
             // Call init(File file) explicitly with absolute library path.
         }
@@ -446,6 +444,7 @@ public abstract class LibVcx {
 
         NativeLibrary.addSearchPath(libraryName, searchPath);
         api = Native.loadLibrary(libraryName, API.class);
+        initLogger();
     }
 
     /**
@@ -457,18 +456,23 @@ public abstract class LibVcx {
     public static void init(File file) {
 
         api = Native.loadLibrary(file.getAbsolutePath(), API.class);
+        initLogger();
     }
 
     /**
      * Initializes the API with the default library.
      */
     public static void init() {
+
         api = Native.loadLibrary(LIBRARY_NAME, API.class);
+        initLogger();
     }
 
     public static void initByLibraryName(String libraryName) {
+
         System.loadLibrary(libraryName);
         api = Native.loadLibrary(libraryName, API.class);
+        initLogger();
     }
 
     /**
@@ -479,5 +483,45 @@ public abstract class LibVcx {
     public static boolean isInitialized() {
 
         return api != null;
+    }
+
+    private static class Logger {
+        private static Callback enabled = null;
+
+        private static Callback log = new Callback() {
+
+            @SuppressWarnings({"unused", "unchecked"})
+            public void callback(Pointer context, int level, String target, String message, String module_path, String file, int line) {
+                org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(String.format("%s.native.%s", LibVcx.class.getName(), target.replace("::", ".")));
+
+                String logMessage = String.format("%s:%d | %s", file, line, message);
+
+                switch (level) {
+                    case 1:
+                        logger.error(logMessage);
+                        break;
+                    case 2:
+                        logger.warn(logMessage);
+                        break;
+                    case 3:
+                        logger.info(logMessage);
+                        break;
+                    case 4:
+                        logger.debug(logMessage);
+                        break;
+                    case 5:
+                        logger.trace(logMessage);
+                        break;
+                    default:
+                        break;
+                }
+            }
+        };
+
+        private static Callback flush = null;
+    }
+
+    private static void initLogger() {
+        api.vcx_set_logger(null, Logger.enabled, Logger.log, Logger.flush);
     }
 }

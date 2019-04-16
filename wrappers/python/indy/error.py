@@ -1,4 +1,5 @@
 from enum import IntEnum
+from typing import Optional
 
 
 class ErrorCode(IntEnum):
@@ -126,6 +127,9 @@ class ErrorCode(IntEnum):
     # Call pool.indy_set_protocol_version to set correct Protocol version.
     PoolIncompatibleProtocolVersion = 308,
 
+    # Item not found on ledger.
+    LedgerNotFound = 309,
+
     # Revocation registry is full and creation of new registry is necessary
     AnoncredsRevocationRegistryFullError = 400,
 
@@ -162,13 +166,21 @@ class ErrorCode(IntEnum):
 
     # Operation is not supported for payment method
     PaymentOperationNotSupportedError = 704,
-    
+
     # Extra funds on inputs
     PaymentExtraFundsError = 705
 
 
 class IndyError(Exception):
-    # error_code: ErrorCode
+    # error_code: ErrorCode - libindy error code
+    # message: Optional[str] - human-readable error description
+    # indy_backtrace: Optional[str] - error backtrace.
+    #         Collecting of backtrace can be enabled by:
+    #             1) setting environment variable `RUST_BACKTRACE=1`
+    #             2) calling `set_runtime_config` function with `collect_backtrace: true`
 
-    def __init__(self, error_code: ErrorCode):
+    def __init__(self, error_code: ErrorCode, error_details: Optional[dict] = None):
         self.error_code = error_code
+        if error_details:
+            self.message = error_details.get('message')
+            self.indy_backtrace = error_details.get('backtrace')

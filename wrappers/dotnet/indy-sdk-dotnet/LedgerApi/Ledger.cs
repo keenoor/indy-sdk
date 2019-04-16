@@ -1,5 +1,5 @@
-﻿using Hyperledger.Indy.PoolApi;
-using Hyperledger.Indy.DidApi;
+﻿using Hyperledger.Indy.DidApi;
+using Hyperledger.Indy.PoolApi;
 using Hyperledger.Indy.Utils;
 using Hyperledger.Indy.WalletApi;
 using System;
@@ -42,9 +42,6 @@ namespace Hyperledger.Indy.LedgerApi
         /// </summary>
         public const string NYM_ROLE_TRUST_ANCHOR = "TRUST_ANCHOR";
 
-        /// <summary>
-        /// Gets the callback to use when a command that submits a message to the ledger completes.
-        /// </summary>
 #if __IOS__
         [MonoPInvokeCallback(typeof(SubmitRequestCompletedDelegate))]
 #endif
@@ -59,9 +56,6 @@ namespace Hyperledger.Indy.LedgerApi
         }
         private static SubmitRequestCompletedDelegate SubmitRequestCallback = SubmitRequestCallbackMethod;
 
-        /// <summary>
-        /// Gets the callback to use when a command that builds a request completes.
-        /// </summary>
 #if __IOS__
         [MonoPInvokeCallback(typeof(BuildRequestCompletedDelegate))]
 #endif
@@ -104,9 +98,6 @@ namespace Hyperledger.Indy.LedgerApi
         }
         private static ParseRegistryResponseCompletedDelegate ParseRegistryResponseCallback = ParseRegistryResponseCallbackMethod;
 
-        /// <summary>
-        /// Gets the callback to use when the command for SignRequestAsync has completed.
-        /// </summary>
 #if __IOS__
         [MonoPInvokeCallback(typeof(SignRequestCompletedDelegate))]
 #endif
@@ -120,6 +111,20 @@ namespace Hyperledger.Indy.LedgerApi
             taskCompletionSource.SetResult(signed_request_json);
         }
         private static SignRequestCompletedDelegate SignRequestCallback = SignRequestCallbackMethod;
+
+#if __IOS__
+        [MonoPInvokeCallback(typeof(GetResponseMetadataCompletedDelegate))]
+#endif
+        private static void GetResponseMetadataCallbackMethod(int xcommand_handle, int err, string response_metadata)
+        {
+            var taskCompletionSource = PendingCommands.Remove<string>(xcommand_handle);
+
+            if (!CallbackHelper.CheckCallback(taskCompletionSource, err))
+                return;
+
+            taskCompletionSource.SetResult(response_metadata);
+        }
+        private static GetResponseMetadataCompletedDelegate GetResponseMetadataCallback = GetResponseMetadataCallbackMethod;
 
         /// <summary>
         /// Signs a request message.
@@ -144,6 +149,40 @@ namespace Hyperledger.Indy.LedgerApi
             var commandHandle = PendingCommands.Add(taskCompletionSource);
 
             int result = NativeMethods.indy_sign_request(
+                commandHandle,
+                wallet.Handle,
+                submitterDid,
+                requestJson,
+                SignRequestCallback);
+
+            CallbackHelper.CheckResult(result);
+
+            return taskCompletionSource.Task;
+        }
+
+        /// <summary>
+        /// Multi signs request message.
+        /// </summary>
+        /// <remarks>
+        /// This method adds information associated with the submitter specified by the
+        /// <paramref name="submitterDid"/> to the JSON provided in the <paramref name="requestJson"/> parameter
+        /// then signs it with the submitter's signing key from the provided wallet.
+        /// </remarks>
+        /// <param name="wallet">The wallet to use for signing.</param>
+        /// <param name="submitterDid">The DID of the submitter identity in the provided wallet.</param>
+        /// <param name="requestJson">The request JSON to sign.</param>
+        /// <returns>An asynchronous task that resolves to a <see cref="string"/> containing the signed 
+        /// message.</returns>
+        public static Task<string> MultiSignRequestAsync(Wallet wallet, string submitterDid, string requestJson)
+        {
+            ParamGuard.NotNull(wallet, "wallet");
+            ParamGuard.NotNullOrWhiteSpace(submitterDid, "submitterDid");
+            ParamGuard.NotNullOrWhiteSpace(requestJson, "requestJson");
+
+            var taskCompletionSource = new TaskCompletionSource<string>();
+            var commandHandle = PendingCommands.Add(taskCompletionSource);
+
+            int result = NativeMethods.indy_multi_sign_request(
                 commandHandle,
                 wallet.Handle,
                 submitterDid,
@@ -220,6 +259,41 @@ namespace Hyperledger.Indy.LedgerApi
                 commandHandle,
                 pool.Handle,
                 requestJson,
+                SubmitRequestCallback);
+
+            CallbackHelper.CheckResult(result);
+
+            return taskCompletionSource.Task;
+        }
+
+        /// <summary>
+        /// Send action to particular nodes of validator pool.
+        /// </summary>
+        /// <param name="pool">The validator pool to submit the request to.</param>
+        /// <param name="requestJson">The request to submit.</param>
+        /// <param name="nodes">A list of node names to send the request to.</param>
+        /// <param name="timeout">The time in seconds to wait for a response from the nodes.</param>
+        /// <remarks>
+        /// The list of node names in the <paramref name="nodes"/> parameter is optional, however if provided it should conform
+        /// to the format ["Node1", "Node2",...."NodeN"].  To use the default timeout provide the value -1 to the 
+        /// <paramref name="timeout"/> parameter.
+        /// </remarks>
+        /// <returns>An asynchronous <see cref="Task{T}"/> that resolves to a JSON <see cref="string"/> 
+        /// containing the results when the operation completes.</returns>
+        public static Task<string> SubmitActionAsync(Pool pool, string requestJson, string nodes, int timeout)
+        {
+            ParamGuard.NotNull(pool, "pool");
+            ParamGuard.NotNullOrWhiteSpace(requestJson, "requestJson");
+
+            var taskCompletionSource = new TaskCompletionSource<string>();
+            var commandHandle = PendingCommands.Add(taskCompletionSource);
+
+            var result = NativeMethods.indy_submit_action(
+                commandHandle,
+                pool.Handle,
+                requestJson,
+                nodes,
+                timeout,
                 SubmitRequestCallback);
 
             CallbackHelper.CheckResult(result);
@@ -638,18 +712,42 @@ namespace Hyperledger.Indy.LedgerApi
         }
 
         /// <summary>
-        /// Builds a GET_TXN request
+        /// Builds a GET_VALIDATOR_INFO request.
         /// </summary>
         /// <param name="submitterDid">The DID of the submitter.</param>
-        /// <param name="ledgerType">(Optional) type of the ledger the requested transaction belongs to:
-        ///     DOMAIN - used default,
-        ///     POOL,
-        ///     CONFIG
-        ///     any number</param>
-        /// <param name="data">seq_no of transaction in ledger</param>
         /// <returns>An asynchronous <see cref="Task{T}"/> that resolves to a <see cref="string"/> 
         /// containing the request JSON. </returns>
-        public static Task<string> BuildGetTxnRequestAsync(string submitterDid, string ledgerType, int data)
+        public static Task<string> BuildGetValidatorInfoRequestAsync(string submitterDid)
+        {
+            ParamGuard.NotNullOrWhiteSpace(submitterDid, "submitterDid");
+
+            var taskCompletionSource = new TaskCompletionSource<string>();
+            var commandHandle = PendingCommands.Add(taskCompletionSource);
+
+            var result = NativeMethods.indy_build_get_validator_info_request(
+                commandHandle,
+                submitterDid,
+                BuildRequestCallback);
+
+            CallbackHelper.CheckResult(result);
+
+            return taskCompletionSource.Task;
+        }
+
+        /// <summary>
+        /// Builds a GET_TXN request
+        /// </summary>
+        /// <param name="submitterDid">The DID of the submitter</param>
+        /// <param name="ledgerType">The type of the ledger the requested transaction belongs to</param>
+        /// <param name="seqNo">The requested transaction sequence number as it is stored on the ledger</param>
+        /// <returns>An asynchronous <see cref="Task{T}"/> that resolves to a <see cref="string"/> 
+        /// containing the request JSON. </returns>
+        /// <remarks>
+        /// The <paramref name="submitterDid"/> if passed as null will default to the LibIndy DID.  The 
+        /// <paramref name="ledgerType"/> can also be passed as null and will default to 'DOMAIN'.  Other values that can be
+        /// passed for this parameter are 'POOL', 'CONFIG' or a string containing any numeric value.
+        /// </remarks>
+        public static Task<string> BuildGetTxnRequestAsync(string submitterDid, string ledgerType, int seqNo)
         {
             var taskCompletionSource = new TaskCompletionSource<string>();
             var commandHandle = PendingCommands.Add(taskCompletionSource);
@@ -658,7 +756,7 @@ namespace Hyperledger.Indy.LedgerApi
                 commandHandle,
                 submitterDid,
                 ledgerType,
-                data,
+                seqNo,
                 BuildRequestCallback);
 
             CallbackHelper.CheckResult(result);
@@ -673,6 +771,8 @@ namespace Hyperledger.Indy.LedgerApi
         /// <param name="submitterDid">Id of Identity stored in secured Wallet.</param>
         /// <param name="writes">If set to <c>true</c> writes.</param>
         /// <param name="force">If set to <c>true</c> force.</param>
+        /// <returns>An asynchronous <see cref="Task{T}"/> that resolves to a <see cref="string"/> 
+        /// containing the request JSON. </returns>
         public static Task<string> BuildPoolConfigRequestAsync(string submitterDid, bool writes, bool force)
         {
             ParamGuard.NotNullOrWhiteSpace(submitterDid, "submitterDid");
@@ -685,6 +785,37 @@ namespace Hyperledger.Indy.LedgerApi
                 submitterDid,
                 writes,
                 force,
+                BuildRequestCallback);
+
+            CallbackHelper.CheckResult(result);
+
+            return taskCompletionSource.Task;
+        }
+
+        /// <summary>
+        /// Builds a POOL_RESTART request.
+        /// </summary>
+        /// <param name="submitterDid">Id of Identity stored in secured Wallet.</param>
+        /// <param name="action">Action that pool has to do after received transaction.</param>
+        /// <param name="dateTime">Restart time in datetime format.</param>
+        /// <returns>An asynchronous <see cref="Task{T}"/> that resolves to a <see cref="string"/> 
+        /// containing the request JSON. </returns>
+        /// <remarks>
+        /// A null can be passed for the <paramref name="dateTime"/> parameter to restart as early as possible.
+        /// </remarks>
+        public static Task<string> BuildPoolRestartRequestAsync(string submitterDid, string action, string dateTime)
+        {
+            ParamGuard.NotNullOrWhiteSpace(submitterDid, "submitterDid");
+            ParamGuard.NotNullOrWhiteSpace(action, "action");
+
+            var taskCompletionSource = new TaskCompletionSource<string>();
+            var commandHandle = PendingCommands.Add(taskCompletionSource);
+
+            var result = NativeMethods.indy_build_pool_restart_request(
+                commandHandle,
+                submitterDid,
+                action,
+                dateTime,
                 BuildRequestCallback);
 
             CallbackHelper.CheckResult(result);
@@ -706,15 +837,14 @@ namespace Hyperledger.Indy.LedgerApi
         /// <param name="justification">Justification.</param>
         /// <param name="reinstall">If set to <c>true</c> reinstall.</param>
         /// <param name="force">If set to <c>true</c> force.</param>
-        public static Task<string> BuildPoolUpgradeRequestAsync(string submitterDid, string name, string version, string action, string sha256, int timeout, string schedule, string justification, bool reinstall, bool force)
+        /// <param name="package">Package to be upgraded.</param>
+        public static Task<string> BuildPoolUpgradeRequestAsync(string submitterDid, string name, string version, string action, string sha256, int timeout, string schedule, string justification, bool reinstall, bool force, string package)
         {
             ParamGuard.NotNullOrWhiteSpace(submitterDid, "submitterDid");
             ParamGuard.NotNullOrWhiteSpace(name, "name");
             ParamGuard.NotNullOrWhiteSpace(version, "version");
             ParamGuard.NotNullOrWhiteSpace(action, "action");
             ParamGuard.NotNullOrWhiteSpace(sha256, "sha256");
-            ParamGuard.NotNullOrWhiteSpace(schedule, "schedule");
-            ParamGuard.NotNullOrWhiteSpace(justification, "justification");
 
             var taskCompletionSource = new TaskCompletionSource<string>();
             var commandHandle = PendingCommands.Add(taskCompletionSource);
@@ -731,6 +861,7 @@ namespace Hyperledger.Indy.LedgerApi
                 justification,
                 reinstall,
                 force,
+                package,
                 BuildRequestCallback);
 
             CallbackHelper.CheckResult(result);
@@ -763,6 +894,7 @@ namespace Hyperledger.Indy.LedgerApi
         public static Task<string> BuildRevocRegDefRequestAsync(string submitterDid, string data)
         {
             ParamGuard.NotNullOrWhiteSpace(submitterDid, "submitterDid");
+            ParamGuard.NotNullOrWhiteSpace(data, "data");
 
             var taskCompletionSource = new TaskCompletionSource<string>();
             var commandHandle = PendingCommands.Add(taskCompletionSource);
@@ -867,6 +999,7 @@ namespace Hyperledger.Indy.LedgerApi
             ParamGuard.NotNullOrWhiteSpace(submitterDid, "submitterDid");
             ParamGuard.NotNullOrWhiteSpace(revocRegDefId, "revocRegDefId");
             ParamGuard.NotNullOrWhiteSpace(revDefType, "revDefType");
+            ParamGuard.NotNullOrWhiteSpace(value, "value");
 
             var taskCompletionSource = new TaskCompletionSource<string>();
             var commandHandle = PendingCommands.Add(taskCompletionSource);
@@ -997,6 +1130,50 @@ namespace Hyperledger.Indy.LedgerApi
                 commandHandle,
                 getRevocRegDeltaResponse,
                 ParseRegistryResponseCallback);
+
+            CallbackHelper.CheckResult(result);
+
+            return taskCompletionSource.Task;
+        }
+
+        /// <summary>
+        /// Parse transaction response to fetch metadata.
+        /// The important use case for this method is validation of Node's response freshens.
+        ///
+        /// Distributed Ledgers can reply with outdated information for consequence read request after write.
+        /// To reduce pool load libindy sends read requests to one random node in the pool.
+        /// Consensus validation is performed based on validation of nodes multi signature for current ledger Merkle Trie root.
+        /// This multi signature contains information about the latest ldeger's transaction ordering time and sequence number that this method returns.
+        ///
+        /// If node that returned response for some reason is out of consensus and has outdated ledger
+        /// it can be caught by analysis of the returned latest ledger's transaction ordering time and sequence number.
+        ///
+        /// There are two ways to filter outdated responses:
+        ///     1) based on "seqNo" - sender knows the sequence number of transaction that he consider as a fresh enough.
+        ///     2) based on "txnTime" - sender knows the timestamp that he consider as a fresh enough.
+        ///
+        /// Note: response of GET_VALIDATOR_INFO request isn't supported
+        /// </summary>
+        /// <returns>
+        /// response metadata.
+        /// {
+        ///     "seqNo": Option&lt;u64> - transaction sequence number,
+        ///     "txnTime": Option&lt;u64> - transaction ordering time,
+        ///     "lastSeqNo": Option&lt;u64> - the latest transaction seqNo for particular Node,
+        ///     "lastTxnTime": Option&lt;u64> - the latest transaction ordering time for particular Node
+        /// }.</returns>
+        /// <param name="response">Response of write or get request.</param>
+        public static Task<string> GetResponseMetadataAsync(string response)
+        {
+            ParamGuard.NotNullOrWhiteSpace(response, "response");
+
+            var taskCompletionSource = new TaskCompletionSource<string>();
+            var commandHandle = PendingCommands.Add(taskCompletionSource);
+
+            var result = NativeMethods.indy_get_response_metadata(
+                commandHandle,
+                response,
+                GetResponseMetadataCallback);
 
             CallbackHelper.CheckResult(result);
 

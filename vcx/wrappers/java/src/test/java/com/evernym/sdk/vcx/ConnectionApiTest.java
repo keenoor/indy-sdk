@@ -4,7 +4,7 @@ package com.evernym.sdk.vcx;
 import com.evernym.sdk.vcx.connection.ConnectionApi;
 import com.evernym.sdk.vcx.connection.InvalidConnectionHandleException;
 import com.evernym.sdk.vcx.vcx.VcxApi;
-import java9.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletableFuture;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -100,6 +100,8 @@ class ConnectionApiTest {
     @DisplayName("delete a connection")
     void deleteConnection() throws VcxException, ExecutionException, InterruptedException {
         Integer connectionHandle = _createConnection();
+        String payload= "{ 'connection_type': 'SMS', 'phone':'7202200000' }";
+        TestHelper.getResultFromFuture(ConnectionApi.vcxConnectionConnect(connectionHandle,TestHelper.convertToValidJson(payload)));
         CompletableFuture<Integer> futureDelete= ConnectionApi.deleteConnection(connectionHandle);
         Awaitility.await().until(futureDelete::isDone);
         assert(futureDelete.get() == 0);

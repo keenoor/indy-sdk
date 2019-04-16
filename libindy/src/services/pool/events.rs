@@ -1,13 +1,12 @@
-use domain::ledger::constants;
-use errors::common::CommonError;
-use errors::pool::PoolError;
 use serde_json;
 use serde_json::Value as SJsonValue;
+
+use domain::ledger::constants;
+use errors::prelude::*;
 use services::ledger::merkletree::merkletree::MerkleTree;
 use services::pool::{PoolService, types::*};
-use std::error::Error;
 
-pub const REQUESTS_FOR_STATE_PROOFS: [&'static str; 7] = [
+pub const REQUESTS_FOR_STATE_PROOFS: [&str; 7] = [
     constants::GET_NYM,
     constants::GET_SCHEMA,
     constants::GET_CRED_DEF,
@@ -17,7 +16,7 @@ pub const REQUESTS_FOR_STATE_PROOFS: [&'static str; 7] = [
     constants::GET_REVOC_REG_DELTA,
 ];
 
-const REQUEST_FOR_FULL: [&'static str; 2] = [
+const REQUEST_FOR_FULL: [&str; 2] = [
     constants::POOL_RESTART,
     constants::GET_VALIDATOR_INFO,
 ];
@@ -70,7 +69,10 @@ pub enum PoolEvent {
         usize, //target_mt_size
         MerkleTree,
     ),
-    CatchupTargetNotFound(PoolError),
+    CatchupRestart(
+        MerkleTree,
+    ),
+    CatchupTargetNotFound(IndyError),
     #[allow(dead_code)] //FIXME
     PoolOutdated,
     Synced(
@@ -236,23 +238,21 @@ fn _parse_msg(msg: &str) -> Option<Message> {
     Message::from_raw_str(msg).map_err(map_err_trace!()).ok()
 }
 
-fn _parse_req_id_and_op(msg: &str) -> Result<(String, String), CommonError> {
+fn _parse_req_id_and_op(msg: &str) -> IndyResult<(String, String)> {
     let req_json = _get_req_json(msg)?;
 
     let req_id: u64 = req_json["reqId"]
         .as_u64()
-        .ok_or(CommonError::InvalidStructure("No reqId in request".to_string()))?;
+        .ok_or(err_msg(IndyErrorKind::InvalidStructure, "No reqId in request"))?;
 
     let op = req_json["operation"]["type"]
         .as_str()
-        .ok_or(CommonError::InvalidStructure("No operation type in request".to_string()))?;
+        .ok_or(err_msg(IndyErrorKind::InvalidStructure, "No operation type in request"))?;
 
     Ok((req_id.to_string(), op.to_string()))
 }
 
-fn _get_req_json(msg: &str) -> Result<SJsonValue, CommonError> {
+fn _get_req_json(msg: &str) -> IndyResult<SJsonValue> {
     serde_json::from_str(msg)
-        .map_err(|err|
-            CommonError::InvalidStructure(
-                format!("Invalid request json: {}", err.description())))
+        .to_indy(IndyErrorKind::InvalidStructure, "Invalid request json") // FIXME: Review kind
 }

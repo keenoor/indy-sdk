@@ -17,7 +17,8 @@ extern crate serde_derive;
 extern crate serde_json;
 
 extern crate byteorder;
-extern crate indy;
+extern crate indyrs as indy;
+extern crate indyrs as api;
 extern crate indy_crypto;
 extern crate uuid;
 extern crate named_type;
@@ -26,16 +27,13 @@ extern crate rust_base58;
 extern crate time;
 extern crate serde;
 
-// Workaround to share some utils code based on indy sdk types between tests and indy sdk
-use indy::api as api;
-
 #[macro_use]
 mod utils;
 
 use utils::{wallet, crypto, did};
 use utils::constants::*;
 
-use indy::api::ErrorCode;
+use self::indy::ErrorCode;
 
 pub const ENCRYPTED_MESSAGE: &'static [u8; 45] = &[187, 227, 10, 29, 46, 178, 12, 179, 197, 69, 171, 70, 228, 204, 52, 22, 199, 54, 62, 13, 115, 5, 216, 66, 20, 131, 121, 29, 251, 224, 253, 201, 75, 73, 225, 237, 219, 133, 35, 217, 131, 135, 232, 129, 32];
 pub const SIGNATURE: &'static [u8; 64] = &[169, 215, 8, 225, 7, 107, 110, 9, 193, 162, 202, 214, 162, 66, 238, 211, 63, 209, 12, 196, 8, 211, 55, 27, 120, 94, 204, 147, 53, 104, 103, 61, 60, 249, 237, 127, 103, 46, 220, 223, 10, 95, 75, 53, 245, 210, 241, 151, 191, 41, 48, 30, 9, 16, 78, 252, 157, 206, 210, 145, 125, 133, 109, 11];
@@ -78,7 +76,7 @@ mod high_cases {
             let wallet_handle = utils::setup_with_wallet();
 
             let res = crypto::create_key(wallet_handle + 1, None);
-            assert_eq!(ErrorCode::WalletInvalidHandle, res.unwrap_err());
+            assert_code!(ErrorCode::WalletInvalidHandle, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -117,7 +115,7 @@ mod high_cases {
             let (wallet_handle, verkey) = setup_with_key();
 
             let res = crypto::set_key_metadata(wallet_handle + 1, &verkey, METADATA);
-            assert_eq!(ErrorCode::WalletInvalidHandle, res.unwrap_err());
+            assert_code!(ErrorCode::WalletInvalidHandle, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -137,7 +135,7 @@ mod high_cases {
             let wallet_handle = utils::setup_with_wallet();
 
             let res = crypto::set_key_metadata(wallet_handle, INVALID_BASE58_VERKEY, METADATA);
-            assert_eq!(ErrorCode::CommonInvalidStructure, res.unwrap_err());
+            assert_code!(ErrorCode::CommonInvalidStructure, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -175,7 +173,7 @@ mod high_cases {
             let (wallet_handle, verkey) = setup_with_key();
 
             let res = crypto::get_key_metadata(wallet_handle, &verkey);
-            assert_eq!(ErrorCode::WalletItemNotFound, res.unwrap_err());
+            assert_code!(ErrorCode::WalletItemNotFound, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -187,7 +185,7 @@ mod high_cases {
             crypto::set_key_metadata(wallet_handle, &verkey, METADATA).unwrap();
 
             let res = crypto::get_key_metadata(wallet_handle + 1, &verkey);
-            assert_eq!(ErrorCode::WalletInvalidHandle, res.unwrap_err());
+            assert_code!(ErrorCode::WalletInvalidHandle, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -213,7 +211,7 @@ mod high_cases {
             let wallet_handle = utils::setup_with_wallet();
 
             let res = crypto::sign(wallet_handle, VERKEY, MESSAGE.as_bytes());
-            assert_eq!(res.unwrap_err(), ErrorCode::WalletItemNotFound);
+            assert_code!(ErrorCode::WalletItemNotFound, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -223,7 +221,7 @@ mod high_cases {
             let (wallet_handle, verkey) = setup_with_key();
 
             let res = crypto::sign(wallet_handle + 1, &verkey, MESSAGE.as_bytes());
-            assert_eq!(res.unwrap_err(), ErrorCode::WalletInvalidHandle);
+            assert_code!(ErrorCode::WalletInvalidHandle, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -249,7 +247,7 @@ mod high_cases {
         fn indy_crypto_verify_works_for_verkey_with_invalid_crypto_type() {
             let verkey = VERKEY_MY1.to_owned() + ":unknown_crypto";
             let res = crypto::verify(&verkey, MESSAGE.as_bytes(), SIGNATURE);
-            assert_eq!(ErrorCode::UnknownCryptoTypeError, res.unwrap_err());
+            assert_code!(ErrorCode::UnknownCryptoTypeError, res);
         }
 
 
@@ -263,7 +261,7 @@ mod high_cases {
         fn indy_crypto_verify_works_for_invalid_signature_len() {
             let signature: Vec<u8> = vec![20, 191, 100, 213, 101, 12, 197, 198, 203, 49, 89, 220, 205, 192, 224, 221, 97, 77, 220, 190];
             let res = crypto::verify(&VERKEY_MY1, MESSAGE.as_bytes(), &signature);
-            assert_eq!(ErrorCode::CommonInvalidStructure, res.unwrap_err());
+            assert_code!(ErrorCode::CommonInvalidStructure, res);
         }
     }
 
@@ -306,7 +304,7 @@ mod high_cases {
             let wallet_handle = utils::setup_with_wallet();
 
             let res = crypto::auth_crypt(wallet_handle, VERKEY_MY2, VERKEY, MESSAGE.as_bytes());
-            assert_eq!(ErrorCode::WalletItemNotFound, res.unwrap_err());
+            assert_code!(ErrorCode::WalletItemNotFound, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -316,7 +314,7 @@ mod high_cases {
             let (wallet_handle, verkey) = setup_with_key();
 
             let res = crypto::auth_crypt(wallet_handle + 1, &verkey, VERKEY, MESSAGE.as_bytes());
-            assert_eq!(ErrorCode::WalletInvalidHandle, res.unwrap_err());
+            assert_code!(ErrorCode::WalletInvalidHandle, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -326,7 +324,7 @@ mod high_cases {
             let (wallet_handle, verkey) = setup_with_key();
 
             let res = crypto::auth_crypt(wallet_handle, &verkey, INVALID_BASE58_VERKEY, MESSAGE.as_bytes());
-            assert_eq!(ErrorCode::CommonInvalidStructure, res.unwrap_err());
+            assert_code!(ErrorCode::CommonInvalidStructure, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -363,7 +361,7 @@ mod high_cases {
             let encrypted_msg = format!(r#"{{"nonce":"Th7MpTaRZVRYnPiabds81Y12","sender":"{:?}","msg":"{:?}"}}"#, VERKEY, ENCRYPTED_MESSAGE.to_vec());
 
             let res = crypto::auth_decrypt(recipient_wallet_handle, &recipient_vk, &encrypted_msg.as_bytes());
-            assert_eq!(ErrorCode::CommonInvalidStructure, res.unwrap_err());
+            assert_code!(ErrorCode::CommonInvalidStructure, res);
 
             wallet::close_wallet(recipient_wallet_handle).unwrap();
             utils::tear_down_with_wallet(sender_wallet_handle);
@@ -376,7 +374,7 @@ mod high_cases {
             let encrypted_msg = crypto::auth_crypt(wallet_handle, &sender_vk, &VERKEY_TRUSTEE, MESSAGE.as_bytes()).unwrap();
 
             let res = crypto::anon_decrypt(wallet_handle, &VERKEY_TRUSTEE, &encrypted_msg);
-            assert_eq!(ErrorCode::WalletItemNotFound, res.unwrap_err());
+            assert_code!(ErrorCode::WalletItemNotFound, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -390,7 +388,7 @@ mod high_cases {
             let encrypted_msg = crypto::auth_crypt(sender_wallet_handle, &sender_vk, &recipient_vk, MESSAGE.as_bytes()).unwrap();
 
             let res = crypto::auth_decrypt(recipient_wallet_handle + 1, &recipient_vk, &encrypted_msg);
-            assert_eq!(ErrorCode::WalletInvalidHandle, res.unwrap_err());
+            assert_code!(ErrorCode::WalletInvalidHandle, res);
 
             wallet::close_wallet(recipient_wallet_handle).unwrap();
             utils::tear_down_with_wallet(sender_wallet_handle);
@@ -414,10 +412,10 @@ mod high_cases {
             utils::setup();
 
             let res = crypto::anon_crypt(INVALID_VERKEY_LENGTH, &MESSAGE.as_bytes());
-            assert_eq!(ErrorCode::CommonInvalidStructure, res.unwrap_err());
+            assert_code!(ErrorCode::CommonInvalidStructure, res);
 
             let res = crypto::anon_crypt(INVALID_BASE58_VERKEY, &MESSAGE.as_bytes());
-            assert_eq!(ErrorCode::CommonInvalidStructure, res.unwrap_err());
+            assert_code!(ErrorCode::CommonInvalidStructure, res);
 
             utils::tear_down();
         }
@@ -446,7 +444,7 @@ mod high_cases {
             let (wallet_handle, verkey) = setup_with_key();
 
             let res = crypto::anon_decrypt(wallet_handle, &verkey, &"unencrypted message".as_bytes());
-            assert_eq!(ErrorCode::CommonInvalidStructure, res.unwrap_err());
+            assert_code!(ErrorCode::CommonInvalidStructure, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -458,7 +456,7 @@ mod high_cases {
             let encrypted_msg = crypto::anon_crypt(&VERKEY_TRUSTEE, MESSAGE.as_bytes()).unwrap();
 
             let res = crypto::anon_decrypt(wallet_handle, &VERKEY_TRUSTEE, &encrypted_msg);
-            assert_eq!(ErrorCode::WalletItemNotFound, res.unwrap_err());
+            assert_code!(ErrorCode::WalletItemNotFound, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
@@ -470,10 +468,221 @@ mod high_cases {
             let encrypted_msg = crypto::anon_crypt(&verkey, MESSAGE.as_bytes()).unwrap();
 
             let res = crypto::anon_decrypt(wallet_handle + 1, &verkey, &encrypted_msg);
-            assert_eq!(ErrorCode::WalletInvalidHandle, res.unwrap_err());
+            assert_code!(ErrorCode::WalletInvalidHandle, res);
 
             utils::tear_down_with_wallet(wallet_handle);
         }
+    }
+
+    mod pack_message_authcrypt {
+        use super::*;
+
+        #[test]
+        fn indy_pack_message_authcrypt_works() {
+            let (wallet_handle, verkey) = setup_with_key();
+            let rec_key_vec = vec![VERKEY_MY1, VERKEY_MY2, VERKEY_TRUSTEE];
+            let receiver_keys = serde_json::to_string(&rec_key_vec).unwrap();
+            let message = "Hello World".as_bytes();
+            let res = crypto::pack_message(wallet_handle, message, &receiver_keys, Some(&verkey));
+            assert!(res.is_ok());
+            utils::tear_down_with_wallet(wallet_handle);
+        }
+
+        #[test]
+        fn indy_pack_message_authcrypt_fails_empty_message() {
+            let (wallet_handle, verkey) = setup_with_key();
+            let rec_key_vec = vec![VERKEY_MY1, VERKEY_MY2, VERKEY_TRUSTEE];
+            let receiver_keys = serde_json::to_string(&rec_key_vec).unwrap();
+            let message = "".as_bytes();
+            let res = crypto::pack_message(wallet_handle, message, &receiver_keys, Some(&verkey));
+            assert_code!(ErrorCode::CommonInvalidParam3, res);
+            utils::tear_down_with_wallet(wallet_handle);
+        }
+
+        #[test]
+        fn indy_pack_message_authcrypt_fails_no_receivers() {
+            let (wallet_handle, verkey) = setup_with_key();
+            let receiver_keys = "[]";
+            let message = "Hello World".as_bytes();
+            let res = crypto::pack_message(wallet_handle, message, &receiver_keys, Some(&verkey));
+            assert_code!(ErrorCode::CommonInvalidStructure, res);
+            utils::tear_down_with_wallet(wallet_handle);
+        }
+
+        #[test]
+        fn indy_pack_message_authcrypt_fails_bad_wallet_handle() {
+            let (wallet_handle, verkey) = setup_with_key();
+            let rec_key_vec = vec![VERKEY_MY1, VERKEY_MY2, VERKEY_TRUSTEE];
+            let receiver_keys = serde_json::to_string(&rec_key_vec).unwrap();
+            let message = "Hello World".as_bytes();
+            let res = crypto::pack_message(wallet_handle + 1, message, &receiver_keys, Some(&verkey));
+            assert_code!(ErrorCode::WalletInvalidHandle, res);
+            utils::tear_down_with_wallet(wallet_handle);
+        }
+
+        #[test]
+        fn indy_pack_message_authcrypt_fails_invalid_verkey() {
+            let (wallet_handle, _) = setup_with_key();
+            let rec_key_vec = vec![VERKEY_MY1, VERKEY_MY2, VERKEY_TRUSTEE];
+            let receiver_keys = serde_json::to_string(&rec_key_vec).unwrap();
+            let message = "Hello World".as_bytes();
+            let res = crypto::pack_message(wallet_handle, message, &receiver_keys, Some(INVALID_BASE58_VERKEY));
+            assert_code!(ErrorCode::CommonInvalidStructure, res);
+            utils::tear_down_with_wallet(wallet_handle);
+        }
+
+    }
+
+    mod pack_message_anoncrypt {
+        use super::*;
+
+        #[test]
+        fn indy_pack_message_anon_works() {
+            let (wallet_handle, _ ) = setup_with_key();
+            let rec_key_vec = vec![VERKEY_MY1, VERKEY_MY2, VERKEY_TRUSTEE];
+            let receiver_keys = serde_json::to_string(&rec_key_vec).unwrap();
+            let message = "Hello World".as_bytes();
+            let res = crypto::pack_message(wallet_handle, message, &receiver_keys, None);
+            assert!(res.is_ok());
+            utils::tear_down_with_wallet(wallet_handle);
+        }
+
+        #[test]
+        fn indy_pack_message_anoncrypt_fails_empty_message() {
+            let (wallet_handle, _ ) = setup_with_key();
+            let rec_key_vec = vec![VERKEY_MY1, VERKEY_MY2, VERKEY_TRUSTEE];
+            let receiver_keys = serde_json::to_string(&rec_key_vec).unwrap();
+            let message = "".as_bytes();
+            let res = crypto::pack_message(wallet_handle, message, &receiver_keys, None);
+            assert_code!(ErrorCode::CommonInvalidParam3, res);
+            utils::tear_down_with_wallet(wallet_handle);
+        }
+
+        #[test]
+        fn indy_pack_message_anoncrypt_fails_no_receivers() {
+            let (wallet_handle, _ ) = setup_with_key();
+            let receiver_keys = "[]";
+            let message = "Hello World".as_bytes();
+            let res = crypto::pack_message(wallet_handle, message, &receiver_keys, None);
+            assert_code!(ErrorCode::CommonInvalidStructure, res);
+            utils::tear_down_with_wallet(wallet_handle);
+        }
+
+        #[test]
+        fn indy_pack_message_anoncrypt_passes_bad_wallet_handle() {
+            let rec_key_vec = vec![VERKEY_MY1, VERKEY_MY2, VERKEY_TRUSTEE];
+            let receiver_keys = serde_json::to_string(&rec_key_vec).unwrap();
+            let message = "Hello World".as_bytes();
+            //The wallet_handle and sender aren't used in this case, so any wallet_handle whether inited or not will work
+            let res = crypto::pack_message(1, message, &receiver_keys, None);
+            assert!(res.is_ok());
+        }
+
+    }
+
+    mod unpack_message_authcrypt {
+        use super::*;
+
+        #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+        pub struct UnpackMessage {
+            pub message: String,
+            pub sender_verkey: String,
+            pub recipient_verkey: String
+        }
+
+        #[test]
+        fn indy_unpack_message_authcrypt_works() {
+            //Test setup
+            let (wallet_handle_sender, sender_verkey) = setup_with_key();
+            let wallet_handle_receiver = wallet::create_and_open_default_wallet().unwrap();
+            let receiver_verkey = crypto::create_key(wallet_handle_receiver, None).unwrap();
+            let rec_key_vec = vec![VERKEY_TRUSTEE, &receiver_verkey];
+            let receiver_keys = serde_json::to_string(&rec_key_vec).unwrap();
+            let pack_message = crypto::pack_message(wallet_handle_sender, AGENT_MESSAGE.as_bytes(), &receiver_keys, Some(&sender_verkey)).unwrap();
+
+            //execute function
+            let res = crypto::unpack_message(wallet_handle_receiver, pack_message.as_slice()).unwrap();
+            let res_serialized : UnpackMessage = serde_json::from_slice(res.as_slice()).unwrap();
+
+            //verify unpack ran correctly
+            assert_eq!(res_serialized.message, AGENT_MESSAGE.to_string());
+            assert_eq!(res_serialized.sender_verkey, sender_verkey);
+            assert_eq!(res_serialized.recipient_verkey, receiver_verkey);
+
+            //teardown
+            wallet::close_wallet(wallet_handle_sender).unwrap();
+            utils::tear_down_with_wallet(wallet_handle_receiver);
+        }
+
+        #[test]
+        fn indy_unpack_message_authcrypt_fails_no_matching_key() {
+            //Test Setup
+            let (wallet_handle_sender, sender_verkey) = setup_with_key();
+            let wallet_handle_receiver = wallet::create_and_open_default_wallet().unwrap();
+            crypto::create_key(wallet_handle_receiver, None).unwrap();
+            let rec_key_vec = vec![VERKEY_TRUSTEE];
+            let receiver_keys = serde_json::to_string(&rec_key_vec).unwrap();
+            let message = "Hello World".as_bytes();
+            let pack_message = crypto::pack_message(wallet_handle_sender, message, &receiver_keys, Some(&sender_verkey)).unwrap();
+
+            //execute function
+            let res = crypto::unpack_message(wallet_handle_receiver, pack_message.as_slice());
+
+            assert_code!(ErrorCode::WalletItemNotFound, res);
+
+            wallet::close_wallet(wallet_handle_sender).unwrap();
+            utils::tear_down_with_wallet(wallet_handle_receiver);
+        }
+
+    }
+
+    mod unpack_message_anoncrypt {
+        use super::*;
+
+        #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+        pub struct UnpackMessage {
+            pub message: String,
+            pub recipient_verkey: String
+        }
+
+        #[test]
+        fn indy_unpack_message_anoncrypt_works() {
+            let (wallet_handle_sender, _) = setup_with_key();
+            let wallet_handle_receiver = wallet::create_and_open_default_wallet().unwrap();
+            let receiver_verkey = crypto::create_key(wallet_handle_receiver, None).unwrap();
+            let rec_key_vec = vec![VERKEY_TRUSTEE, &receiver_verkey];
+            let receiver_keys = serde_json::to_string(&rec_key_vec).unwrap();
+            let pack_message = crypto::pack_message(wallet_handle_sender, AGENT_MESSAGE.as_bytes(), &receiver_keys, None).unwrap();
+            let res = crypto::unpack_message(wallet_handle_receiver, pack_message.as_slice()).unwrap();
+            let res_serialized : UnpackMessage = serde_json::from_slice(res.as_slice()).unwrap();
+
+            assert_eq!(res_serialized.message, AGENT_MESSAGE.to_string());
+            assert_eq!(res_serialized.recipient_verkey, receiver_verkey);
+
+            wallet::close_wallet(wallet_handle_sender).unwrap();
+            utils::tear_down_with_wallet(wallet_handle_receiver);
+        }
+
+        #[test]
+        fn indy_unpack_message_anoncrypt_fails_no_matching_key() {
+            //Test Setup
+            let (wallet_handle_sender, _) = setup_with_key();
+            let wallet_handle_receiver = wallet::create_and_open_default_wallet().unwrap();
+            crypto::create_key(wallet_handle_receiver, None).unwrap();
+            let rec_key_vec = vec![VERKEY_TRUSTEE];
+            let receiver_keys = serde_json::to_string(&rec_key_vec).unwrap();
+            let message = "Hello World".as_bytes();
+            let pack_message = crypto::pack_message(wallet_handle_sender, message, &receiver_keys, None).unwrap();
+
+            //execute function
+            let res = crypto::unpack_message(wallet_handle_receiver, pack_message.as_slice());
+
+            assert_code!(ErrorCode::WalletItemNotFound, res);
+
+            wallet::close_wallet(wallet_handle_sender).unwrap();
+            utils::tear_down_with_wallet(wallet_handle_receiver);
+        }
+
     }
 }
 

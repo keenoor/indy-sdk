@@ -19,6 +19,7 @@ export interface ISchemaCreateData {
  * name: name of schema
  * version:
  * attrNames: a list of named attribtes inteded to be added to the schema
+ * (the number of attributes should be less or equal than 125)
  */
 export interface ISchemaAttrs {
   name: string,
@@ -193,7 +194,7 @@ export class Schema extends VCXBase<ISchemaSerializedData> {
         schemaId
       }
       const newSchema = new Schema(sourceId, schemaParams)
-      newSchema._setHandle(schemaLookupData.handle.toString())
+      newSchema._setHandle(schemaLookupData.handle)
       return newSchema
     } catch (err) {
       throw new VCXInternalError(err)
@@ -273,7 +274,7 @@ export class Schema extends VCXBase<ISchemaSerializedData> {
     }
   }
 
-  protected _setHandle (handle: string) {
+  protected _setHandle (handle: number) {
     super._setHandle(handle)
     this.paymentManager = new SchemaPaymentManager({ handle })
   }

@@ -19,6 +19,7 @@ typedef unsigned int vcx_wallet_search_handle_t;
 typedef unsigned int vcx_bool_t;
 typedef unsigned int count_t;
 typedef unsigned long vcx_price_t;
+typedef unsigned int vcx_u32_t;
 
 typedef enum
 {
@@ -1576,6 +1577,53 @@ vcx_error_t vcx_wallet_update_record_value(vcx_command_handle_t command_handle,
 vcx_error_t vcx_wallet_validate_payment_address(int32_t command_handle,
                                              const char *payment_address,
                                              void (*cb)(int32_t, vcx_error_t));
+
+
+vcx_error_t vcx_set_default_logger( const char * pattern );
+vcx_error_t vcx_set_logger( const void* context,
+                            vcx_bool_t (*enabledFn)(const void*  context,
+                                                      vcx_u32_t level,
+                                                      const char* target),
+                            void (*logFn)(const void*  context,
+                                          vcx_u32_t level,
+                                          const char* target,
+                                          const char* message,
+                                          const char* module_path,
+                                          const char* file,
+                                          vcx_u32_t line),
+                            void (*flushFn)(const void*  context));
+vcx_error_t vcx_get_logger(const void*  vcx_get_logger,
+                           vcx_bool_t (**enabledFn)(const void*  context,
+                                                     vcx_u32_t level,
+                                                     const char* target),
+                           void (**logFn)(const void*  context,
+                                          vcx_u32_t level,
+                                          const char* target,
+                                          const char* message,
+                                          const char* module_path,
+                                          const char* file,
+                                          vcx_u32_t line),
+                           void (**flushFn)(const void*  context) );
+
+/// Get details for last occurred error.
+///
+/// This function should be called in two places to handle both cases of error occurrence:
+///     1) synchronous  - in the same application thread
+///     2) asynchronous - inside of function callback
+///
+/// NOTE: Error is stored until the next one occurs in the same execution thread or until asynchronous callback finished.
+///       Returning pointer has the same lifetime.
+///
+/// #Params
+/// * `error_json_p` - Reference that will contain error details (if any error has occurred before)
+///  in the format:
+/// {
+///     "backtrace": Optional<str> - error backtrace.
+///         Collecting of backtrace can be enabled by setting environment variable `RUST_BACKTRACE=1`
+///     "message": str - human-readable error description
+/// }
+///
+vcx_error_t vcx_get_current_error(const char ** error_json_p);
 
 #ifdef __cplusplus
 } // extern "C"

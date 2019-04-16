@@ -2,10 +2,8 @@ import '../module-resolver-helper'
 
 import { assert } from 'chai'
 import { connectionCreate, connectionCreateConnect, dataConnectionCreate } from 'helpers/entities'
-import { gcTest } from 'helpers/gc'
-import { TIMEOUT_GC } from 'helpers/test-constants'
 import { initVcxTestMode, shouldThrow, sleep } from 'helpers/utils'
-import { Connection, rustAPI, StateType, VCXCode, VCXMock, VCXMockMessage } from 'src'
+import { Connection, StateType, VCXCode, VCXMock, VCXMockMessage } from 'src'
 
 describe('Connection:', () => {
   before(() => initVcxTestMode())
@@ -25,23 +23,50 @@ describe('Connection:', () => {
   describe('connect:', () => {
     it('success: without phone', async () => {
       const connection = await connectionCreate()
-      const inviteDetails = await connection.connect()
+      const inviteDetails = await connection.connect({ data: '{"connection_type":"QR"}' })
       assert.notEqual(inviteDetails, '')
     })
 
     it('success: with phone', async () => {
       const connection = await connectionCreate()
-      const inviteDetails = await connection.connect({ phone: '7202200000' })
+      const inviteDetails = await connection.connect({ data: '{"connection_type":"SMS","phone":"7202200000"}' })
       assert.notEqual(inviteDetails, '')
     })
 
     it('throws: not initialized', async () => {
       const connection = new (Connection as any)()
-      const err = await shouldThrow(async () => connection.connect())
+      const err = await shouldThrow(async () => connection.connect({ data: '{"connection_type":"QR"}' }))
       assert.equal(err.vcxCode, VCXCode.INVALID_CONNECTION_HANDLE)
     })
   })
 
+  describe('sendMessage:', () => {
+    it('success: sends message', async () => {
+      const connection = await connectionCreate()
+      await connection.connect({ data: '{"connection_type":"QR"}' })
+      const error = await shouldThrow(() => connection.sendMessage({ msg: 'msg', type: 'msg', title: 'title' }))
+      assert.equal(error.vcxCode, VCXCode.NOT_READY)
+    })
+  })
+
+  describe('signData:', () => {
+    it('success: signs data', async () => {
+      const connection = await connectionCreate()
+      await connection.connect({ data: '{"connection_type":"QR"}' })
+      const signature = await connection.signData(new Buffer('random string'))
+      assert(signature)
+    })
+  })
+
+  describe('verifySignature', () => {
+    it('success: verifies the signature', async () => {
+      const connection = await connectionCreate()
+      await connection.connect({ data: '{"connection_type":"QR"}' })
+      const valid = await connection.verifySignature({data: new Buffer('random string'),
+        signature: new Buffer('random string')})
+      assert(valid)
+    })
+  })
   describe('serialize:', () => {
     it('success', async () => {
       const connection = await connectionCreate()
@@ -62,18 +87,9 @@ describe('Connection:', () => {
       assert.equal(error.vcxCode, VCXCode.INVALID_CONNECTION_HANDLE)
     })
 
-    it('throws: connection released', async () => {
-      const connection = await connectionCreateConnect()
-      const data = await connection.serialize()
-      assert.ok(data)
-      assert.equal(data.data.source_id, connection.sourceId)
-      assert.equal(await connection.release(), VCXCode.SUCCESS)
-      const error = await shouldThrow(() => connection.serialize())
-      assert.equal(error.vcxCode, VCXCode.INVALID_CONNECTION_HANDLE)
-    })
-
     it('throws: connection deleted', async () => {
       const connection = await connectionCreate()
+      await connection.connect({ data: '{"connection_type":"QR"}' })
       await connection.delete()
       const error = await shouldThrow(() => connection.serialize())
       assert.equal(error.vcxCode, VCXCode.INVALID_CONNECTION_HANDLE)
@@ -94,22 +110,6 @@ describe('Connection:', () => {
       const error = await shouldThrow(async () => Connection.deserialize({ data:
         { source_id: 'Invalid' } } as any))
       assert.equal(error.vcxCode, VCXCode.INVALID_JSON)
-    })
-  })
-
-  describe('release:', () => {
-    it('success', async () => {
-      const connection = await connectionCreateConnect()
-      assert.equal(await connection.release(), VCXCode.SUCCESS)
-      const errorSerialize = await shouldThrow(() => connection.serialize())
-      assert.equal(errorSerialize.vcxCode, VCXCode.INVALID_CONNECTION_HANDLE)
-    })
-
-    // TODO: Enable once https://evernym.atlassian.net/browse/EN-668 is resolved
-    it.skip('throws: not initialized', async () => {
-      const connection = new (Connection as any)()
-      const error = await shouldThrow(() => connection.release())
-      assert.equal(error.vcxCode, VCXCode.UNKNOWN_ERROR)
     })
   })
 
@@ -173,22 +173,4 @@ describe('Connection:', () => {
     })
   })
 
-  describe('GC:', function () {
-    this.timeout(TIMEOUT_GC)
-
-    const connectionCreateCheckAndDelete = async () => {
-      let connection: Connection | null = await connectionCreateConnect()
-      const handle = connection.handle
-      connection = null
-      return handle
-    }
-    it('calls release', async () => {
-      const handle = await connectionCreateCheckAndDelete()
-      await gcTest({
-        handle,
-        serialize: rustAPI().vcx_connection_serialize,
-        stopCode: VCXCode.INVALID_CONNECTION_HANDLE
-      })
-    })
-  })
 })

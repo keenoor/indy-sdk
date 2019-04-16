@@ -1,5 +1,6 @@
 package org.hyperledger.indy.sdk;
 
+import com.sun.jna.ptr.PointerByReference;
 import org.hyperledger.indy.sdk.anoncreds.*;
 import org.hyperledger.indy.sdk.did.DidAlreadyExistsException;
 import org.hyperledger.indy.sdk.ledger.ConsensusException;
@@ -10,6 +11,7 @@ import org.hyperledger.indy.sdk.payments.*;
 import org.hyperledger.indy.sdk.pool.*;
 import org.hyperledger.indy.sdk.crypto.UnknownCryptoException;
 import org.hyperledger.indy.sdk.wallet.*;
+import org.json.JSONObject;
 
 /**
  * Thrown when an Indy specific error has occurred.
@@ -18,6 +20,10 @@ public class IndyException extends Exception {
 
 	private static final long serialVersionUID = 2650355290834266477L;
 	private int sdkErrorCode;
+	private String sdkMessage;
+	private String sdkBacktrace; // Collecting of backtrace can be enabled by:
+								 //   1) setting environment variable `RUST_BACKTRACE=1`
+								 //   2) calling `setRuntimeConfig` API function with `collect_backtrace: true`
 
 	/**
 	 * Initializes a new IndyException with the specified message.
@@ -27,7 +33,10 @@ public class IndyException extends Exception {
 	 */
 	protected IndyException(String message, int sdkErrorCode) {
 		super(message);
+		ErrorDetails errorDetails = new ErrorDetails();
 		this.sdkErrorCode = sdkErrorCode;
+		this.sdkMessage = errorDetails.message;
+		this.sdkBacktrace = errorDetails.backtrace;
 	}
 
 	/**
@@ -37,6 +46,41 @@ public class IndyException extends Exception {
 	 */
 	public int getSdkErrorCode() {
 		return sdkErrorCode;
+	}
+
+	/**
+	 * Sets the SDK error message for the exception.
+	 */
+	private String setSdkMessage() {
+		return sdkMessage;
+	}
+
+	/**
+	 * Gets the SDK error backtrace for the exception.
+	 *
+	 * @return The SDK backtrace.
+	 */
+	public String getSdkBacktrace() {
+		return sdkBacktrace;
+	}
+
+	private static class ErrorDetails{
+		String message;
+		String backtrace;
+
+		private ErrorDetails() {
+			PointerByReference errorDetailsJson = new PointerByReference();
+
+			LibIndy.api.indy_get_current_error(errorDetailsJson);
+
+			try {
+				JSONObject errorDetails = new JSONObject(errorDetailsJson.getValue().getString(0));
+				this.message = errorDetails.optString("message");
+				this.backtrace = errorDetails.optString("backtrace");
+			} catch (Exception ignored){
+				// Nothing to do
+			}
+		}
 	}
 
 	/**
@@ -120,6 +164,8 @@ public class IndyException extends Exception {
 				return new TimeoutException();
 			case PoolIncompatibleProtocolVersion:
 				return new PoolIncompatibleProtocolVersionException();
+			case LedgerNotFound:
+				return new LedgerNotFoundException();
 			case AnoncredsRevocationRegistryFullError:
 				return new RevocationRegistryFullException();
 			case AnoncredsInvalidUserRevocId:

@@ -7,6 +7,8 @@ extern crate named_type_derive;
 #[macro_use]
 extern crate derivative;
 
+extern crate serde;
+
 #[macro_use]
 extern crate serde_derive;
 
@@ -14,28 +16,22 @@ extern crate serde_derive;
 extern crate serde_json;
 
 extern crate byteorder;
-extern crate indy;
+extern crate indyrs as indy;
+extern crate indyrs as api;
 extern crate indy_crypto;
 extern crate uuid;
 extern crate named_type;
 extern crate rmp_serde;
 extern crate rust_base58;
 extern crate time;
-extern crate serde;
-
-// Workaround to share some utils code based on indy sdk types between tests and indy sdk
-use indy::api as api;
 
 #[macro_use]
 mod utils;
 
-#[cfg(feature = "local_nodes_pool")]
-use indy::api::ErrorCode;
+use self::indy::ErrorCode;
 
-use utils::{environment, callback, ledger, pool, timeout};
+use utils::{environment, ledger, pool};
 use utils::constants::*;
-
-use std::ffi::CString;
 
 mod high_cases {
     use super::*;
@@ -61,7 +57,7 @@ mod high_cases {
 
             let pool_name = "";
             let res = pool::create_pool_ledger_config(pool_name, None);
-            assert_eq!(res.unwrap_err(), ErrorCode::CommonInvalidParam2);
+            assert_code!(ErrorCode::CommonInvalidParam2, res);
 
             utils::tear_down();
         }
@@ -98,7 +94,8 @@ mod high_cases {
 
             let txn_file_path = pool::create_genesis_txn_file_for_test_pool("pool_create", Some(0), None);
             let pool_config = pool::pool_config_json(txn_file_path.as_path());
-            assert_eq!(ErrorCode::CommonInvalidStructure, pool::create_pool_ledger_config("pool_create", Some(pool_config.as_str())).unwrap_err());
+            let res = pool::create_pool_ledger_config("pool_create", Some(pool_config.as_str()));
+            assert_code!(ErrorCode::CommonInvalidStructure, res);
 
             utils::tear_down();
         }
@@ -152,7 +149,7 @@ mod high_cases {
             pool::create_and_open_pool_ledger(pool_name).unwrap();
 
             let res = pool::open_pool_ledger(pool_name, None);
-            assert_eq!(ErrorCode::PoolLedgerInvalidPoolHandle, res.unwrap_err());
+            assert_code!(ErrorCode::PoolLedgerInvalidPoolHandle, res);
 
             utils::tear_down();
         }
@@ -243,6 +240,8 @@ mod high_cases {
 
     mod close {
         use super::*;
+        extern crate futures;
+        use self::futures::Future;
 
         #[test]
         #[cfg(feature = "local_nodes_pool")]
@@ -260,7 +259,8 @@ mod high_cases {
             let pool_handle = utils::setup_with_pool();
 
             pool::close(pool_handle).unwrap();
-            assert_eq!(pool::close(pool_handle).unwrap_err(), ErrorCode::PoolLedgerInvalidPoolHandle);
+            let res= pool::close(pool_handle);
+            assert_code!(ErrorCode::PoolLedgerInvalidPoolHandle, res);
 
             utils::tear_down();
         }
@@ -284,17 +284,12 @@ mod high_cases {
 
             let get_nym_req = ledger::build_get_nym_request(Some(DID_MY1), DID_MY1).unwrap();
 
-            let get_nym_req = CString::new(get_nym_req).unwrap();
-
-            let (submit_receiver, submit_cmd_handle, submit_cb) = callback::_closure_to_cb_ec_string();
-
-            assert_eq!(api::ledger::indy_submit_request(submit_cmd_handle, pool_handle, get_nym_req.as_ptr(), submit_cb),
-                       ErrorCode::Success);
+            let submit_fut = indy::ledger::submit_request(pool_handle, &get_nym_req);
 
             pool::close(pool_handle).unwrap();
 
-            let (err, _) = submit_receiver.recv_timeout(timeout::short_timeout()).unwrap();
-            assert_eq!(err, ErrorCode::PoolLedgerTerminated);
+            let res = submit_fut.wait();
+            assert_code!(ErrorCode::PoolLedgerTerminated, res);
 
             /* Now any request to API can failed, if pool::close works incorrect in case of pending requests.
                For example try to delete the pool. */
@@ -327,7 +322,8 @@ mod high_cases {
 
             let pool_handle = pool::create_and_open_pool_ledger(POOL).unwrap();
 
-            assert_eq!(pool::delete(POOL).unwrap_err(), ErrorCode::CommonInvalidState);
+            let res = pool::delete(POOL);
+            assert_code!(ErrorCode::CommonInvalidState, res);
 
             pool::close(pool_handle).unwrap();
 
@@ -369,7 +365,7 @@ mod medium_cases {
             let config = r#"{}"#.to_string();
 
             let res = pool::create_pool_ledger_config(POOL, Some(config.as_str()));
-            assert_eq!(res.unwrap_err(), ErrorCode::CommonInvalidStructure);
+            assert_code!(ErrorCode::CommonInvalidStructure, res);
 
             utils::tear_down();
         }
@@ -381,7 +377,7 @@ mod medium_cases {
             let config = r#"{"genesis_txn": "path"}"#.to_string();
 
             let res = pool::create_pool_ledger_config(POOL, Some(config.as_str()));
-            assert_eq!(res.unwrap_err(), ErrorCode::CommonIOError);
+            assert_code!(ErrorCode::CommonIOError, res);
 
             utils::tear_down();
         }
@@ -395,8 +391,7 @@ mod medium_cases {
 
             pool::create_pool_ledger_config(POOL, Some(pool_config.as_str())).unwrap();
             let res = pool::create_pool_ledger_config(POOL, Some(pool_config.as_str()));
-
-            assert_eq!(res.unwrap_err(), ErrorCode::PoolLedgerConfigAlreadyExistsError);
+            assert_code!(ErrorCode::PoolLedgerConfigAlreadyExistsError, res);
 
             utils::tear_down();
         }
@@ -422,7 +417,7 @@ mod medium_cases {
             utils::setup();
 
             let res = pool::open_pool_ledger(POOL, None);
-            assert_eq!(res.unwrap_err(), ErrorCode::PoolLedgerNotCreatedError);
+            assert_code!(ErrorCode::PoolLedgerNotCreatedError, res);
 
             utils::tear_down();
         }
@@ -433,7 +428,7 @@ mod medium_cases {
             utils::setup();
 
             let res = pool::open_pool_ledger(POOL, None);
-            assert_eq!(res.unwrap_err(), ErrorCode::PoolLedgerNotCreatedError);
+            assert_code!(ErrorCode::PoolLedgerNotCreatedError, res);
 
             let pool_handle = pool::create_and_open_pool_ledger(POOL).unwrap();
 
@@ -455,7 +450,7 @@ mod medium_cases {
             pool::create_pool_ledger_config(pool_name, Some(pool_config.as_str())).unwrap();
 
             let res = pool::open_pool_ledger(pool_name, Some(pool_config.as_str()));
-            assert_eq!(res.unwrap_err(), ErrorCode::CommonInvalidState);
+            assert_code!(ErrorCode::CommonInvalidState, res);
 
             utils::tear_down();
         }
@@ -473,7 +468,7 @@ mod medium_cases {
             pool::create_pool_ledger_config(pool_name, Some(pool_config.as_str())).unwrap();
 
             let res = pool::open_pool_ledger(pool_name, None);
-            assert_eq!(res.unwrap_err(), ErrorCode::CommonInvalidState);
+            assert_code!(ErrorCode::CommonInvalidState, res);
 
             utils::tear_down();
         }
@@ -492,7 +487,7 @@ mod medium_cases {
             pool::create_pool_ledger_config(name, Some(pool_config.as_str())).unwrap();
 
             let res = pool::open_pool_ledger(name, Some(config));
-            assert_eq!(res.unwrap_err(), ErrorCode::CommonInvalidStructure);
+            assert_code!(ErrorCode::CommonInvalidStructure, res);
 
             utils::tear_down();
         }
@@ -509,7 +504,7 @@ mod medium_cases {
             pool::create_pool_ledger_config(POOL, Some(pool_config.as_str())).unwrap();
 
             let res = pool::open_pool_ledger(POOL, None);
-            assert_eq!(res.unwrap_err(), ErrorCode::PoolIncompatibleProtocolVersion);
+            assert_code!(ErrorCode::PoolIncompatibleProtocolVersion, res);
 
             utils::tear_down();
         }
@@ -526,7 +521,7 @@ mod medium_cases {
             pool::create_pool_ledger_config(POOL, Some(pool_config.as_str())).unwrap();
 
             let res = pool::open_pool_ledger(POOL, None);
-            assert_eq!(res.unwrap_err(), ErrorCode::PoolLedgerTimeout);
+            assert_code!(ErrorCode::PoolLedgerTimeout, res);
 
             utils::tear_down();
         }
@@ -541,7 +536,7 @@ mod medium_cases {
             let pool_handle = utils::setup_with_pool();
 
             let res = pool::close(pool_handle + 1);
-            assert_eq!(res.unwrap_err(), ErrorCode::PoolLedgerInvalidPoolHandle);
+            assert_code!(ErrorCode::PoolLedgerInvalidPoolHandle, res);
 
             utils::tear_down_with_pool(pool_handle);
         }
@@ -555,7 +550,7 @@ mod medium_cases {
             utils::setup();
 
             let res = pool::delete(POOL);
-            assert_eq!(res.unwrap_err(), ErrorCode::CommonIOError);
+            assert_code!(ErrorCode::CommonIOError, res);
 
             utils::tear_down();
         }
@@ -568,7 +563,7 @@ mod medium_cases {
             pool::close(pool_handle).unwrap();
             pool::delete(POOL).unwrap();
             let res = pool::delete(POOL);
-            assert_eq!(res.unwrap_err(), ErrorCode::CommonIOError);
+            assert_code!(ErrorCode::CommonIOError, res);
 
             utils::tear_down();
         }
@@ -586,7 +581,7 @@ mod medium_cases {
 
             let invalid_pool_handle = pool_handle + 1;
             let res = pool::refresh(invalid_pool_handle);
-            assert_eq!(res.unwrap_err(), ErrorCode::PoolLedgerInvalidPoolHandle);
+            assert_code!(ErrorCode::PoolLedgerInvalidPoolHandle, res);
 
             pool::close(pool_handle).unwrap();
 
@@ -600,7 +595,7 @@ mod medium_cases {
         #[test]
         fn indy_set_protocol_version_works_for_unsupported() {
             let res = pool::set_protocol_version(0);
-            assert_eq!(res.unwrap_err(), ErrorCode::PoolIncompatibleProtocolVersion);
+            assert_code!(ErrorCode::PoolIncompatibleProtocolVersion, res);
         }
     }
 }

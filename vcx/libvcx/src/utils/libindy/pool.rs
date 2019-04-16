@@ -1,71 +1,79 @@
-extern crate libc;
+use futures::Future;
+use indy::{pool, ErrorCode};
 
-use utils::{ error, timeout::TimeoutUtils };
 use std::sync::RwLock;
+
 use settings;
-use indy::pool::Pool;
-use indy::ErrorCode;
-use utils::libindy::error_codes::map_rust_indy_sdk_error_code;
+use utils::libindy::error_codes::map_rust_indy_sdk_error;
+use error::prelude::*;
 
 lazy_static! {
     static ref POOL_HANDLE: RwLock<Option<i32>> = RwLock::new(None);
 }
 
-pub fn change_pool_handle(handle: Option<i32>){
+pub fn change_pool_handle(handle: Option<i32>) {
     let mut h = POOL_HANDLE.write().unwrap();
     *h = handle;
 }
 
-pub fn set_protocol_version() -> u32 {
-    match Pool::set_protocol_version(settings::get_protocol_version()) {
-        Ok(_) => error::SUCCESS.code_num,
-        Err(_) => error::UNKNOWN_LIBINDY_ERROR.code_num,
-    }
+pub fn set_protocol_version() -> VcxResult<()> {
+    pool::set_protocol_version(settings::get_protocol_version())
+        .wait()
+        .map_err(map_rust_indy_sdk_error)
 }
 
-pub fn create_pool_ledger_config(pool_name: &str, path: &str) -> Result<(), u32> {
-    let pool_config = format!(r#"{{"genesis_txn":"{}"}}"#, path);
+pub fn create_pool_ledger_config(pool_name: &str, path: &str) -> VcxResult<()> {
+    let pool_config = json!({"genesis_txn": path}).to_string();
 
-    match Pool::create_ledger_config(pool_name, Some(&pool_config)) {
-        Ok(_) => Ok(()),
-        Err(x) => if x != ErrorCode::PoolLedgerConfigAlreadyExistsError {
-            Err(error::UNKNOWN_LIBINDY_ERROR.code_num)
+    match pool::create_pool_ledger_config(pool_name, Some(&pool_config))
+        .wait() {
+        Ok(x) => Ok(()),
+        Err(x) => if x.error_code != ErrorCode::PoolLedgerConfigAlreadyExistsError {
+            Err(VcxError::from_msg(VcxErrorKind::UnknownLiibndyError, x))
         } else {
             Ok(())
         }
     }
 }
 
-pub fn open_pool_ledger(pool_name: &str, config: Option<&str>) -> Result<u32, u32> {
+pub fn open_pool_ledger(pool_name: &str, config: Option<&str>) -> VcxResult<u32> {
+    set_protocol_version()?;
 
-    set_protocol_version();
+    let handle = pool::open_pool_ledger(pool_name, config)
+        .wait()
+        .map_err(map_rust_indy_sdk_error)?;
 
-    match Pool::open_ledger_timeout(pool_name, config, TimeoutUtils::medium_timeout()).map_err(map_rust_indy_sdk_error_code) {
-        Ok(x) => {
-            change_pool_handle(Some(x));
-            Ok(x as u32)
-        },
-        Err(_) => Err(error::UNKNOWN_LIBINDY_ERROR.code_num),
-    }
+    change_pool_handle(Some(handle));
+    Ok(handle as u32)
 }
 
-pub fn close() -> Result<(), u32> {
+pub fn close() -> VcxResult<()> {
     let handle = get_pool_handle()?;
     change_pool_handle(None);
-    Pool::close_timeout(handle, TimeoutUtils::medium_timeout()).map_err(map_rust_indy_sdk_error_code)
+
+    //TODO there was timeout here (before future-based Rust wrapper)
+    pool::close_pool_ledger(handle)
+        .wait()
+        .map_err(map_rust_indy_sdk_error)
 }
 
-pub fn delete(pool_name: &str) -> Result<(), u32> {
+pub fn delete(pool_name: &str) -> VcxResult<()> {
+    trace!("delete >>> pool_name: {}", pool_name);
+
     if settings::test_indy_mode_enabled() {
         change_pool_handle(None);
-        return Ok(())
+        return Ok(());
     }
 
-    Pool::delete(pool_name).map_err(map_rust_indy_sdk_error_code)
+    pool::delete_pool_ledger(pool_name)
+        .wait()
+        .map_err(map_rust_indy_sdk_error)
 }
 
-pub fn get_pool_handle() -> Result<i32, u32> {
-    Ok(POOL_HANDLE.read().or(Err(error::NO_POOL_OPEN.code_num))?.ok_or(error::NO_POOL_OPEN.code_num)?)
+pub fn get_pool_handle() -> VcxResult<i32> {
+    POOL_HANDLE.read()
+        .or(Err(VcxError::from_msg(VcxErrorKind::NoPoolOpen, "There is no pool opened")))?
+        .ok_or(VcxError::from_msg(VcxErrorKind::NoPoolOpen, "There is no pool opened"))
 }
 
 #[cfg(test)]
@@ -73,7 +81,10 @@ pub mod tests {
     use super::*;
     use std::fs;
     use std::io::Write;
-    use utils::constants::{POOL, GENESIS_PATH};
+    use utils::{
+        constants::{POOL, GENESIS_PATH},
+        get_temp_dir_path
+    };
 
     pub fn delete_test_pool() {
         match delete(POOL) {
@@ -84,7 +95,7 @@ pub mod tests {
 
     pub fn open_sandbox_pool() -> u32 {
         create_genesis_txn_file();
-        create_pool_ledger_config(POOL, GENESIS_PATH).unwrap();
+        create_pool_ledger_config(POOL, get_temp_dir_path(Some(GENESIS_PATH)).to_str().unwrap()).unwrap();
         open_pool_ledger(POOL, None).unwrap()
     }
 
@@ -96,11 +107,12 @@ pub mod tests {
     }
 
     pub fn create_genesis_txn_file() {
-        let test_pool_ip = "127.0.0.1".to_string();
+        let test_pool_ip = ::std::env::var("TEST_POOL_IP").unwrap_or("127.0.0.1".to_string());
+
         let node_txns = get_txns(&test_pool_ip);
         let txn_file_data = node_txns[0..4].join("\n");
 
-        let mut f = fs::File::create(GENESIS_PATH).unwrap();
+        let mut f = fs::File::create(get_temp_dir_path(Some(GENESIS_PATH)).to_str().unwrap()).unwrap();
         f.write_all(txn_file_data.as_bytes()).unwrap();
         f.flush().unwrap();
         f.sync_all().unwrap();

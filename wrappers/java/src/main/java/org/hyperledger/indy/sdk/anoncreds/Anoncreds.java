@@ -164,7 +164,7 @@ public class Anoncreds extends IndyJava.API {
 	 * @param issuerDid The DID of the issuer.
 	 * @param name      Human-readable name of schema.
 	 * @param version   Version of schema.
-	 * @param attrs:    List of schema attributes descriptions
+	 * @param attrs:    List of schema attributes descriptions (the number of attributes should be less or equal than 125)
 	 * @return A future resolving to IssuerCreateSchemaResult object containing:
 	 * schemaId: identifier of created schema
 	 * schemaJson: schema as json
@@ -612,6 +612,7 @@ public class Anoncreds extends IndyJava.API {
 	 *      "nonce": string
 	 *    }
 	 * credReqMetadataJson: Credential request metadata json for processing of received form Issuer credential.
+	 *    Note: credReqMetadataJson mustn't be shared with Issuer.
 	 * @throws IndyException Thrown if an error occurs when calling the underlying SDK.
 	 */
 	public static CompletableFuture<ProverCreateCredentialRequestResult> proverCreateCredentialReq(
@@ -960,7 +961,7 @@ public class Anoncreds extends IndyJava.API {
 	 * Each proof is associated with a credential and corresponding schema_id, cred_def_id, rev_reg_id and timestamp.
 	 * There is also aggregated proof part common for all credential proofs.
 	 *     {
-	 *         "requested": {
+	 *         "requested_proof": {
 	 *             "revealed_attrs": {
 	 *                 "requested_attr1_id": {sub_proof_index: number, raw: string, encoded: string},
 	 *                 "requested_attr4_id": {sub_proof_index: number: string, encoded: string},
@@ -1046,7 +1047,7 @@ public class Anoncreds extends IndyJava.API {
 	 *     }
 	 * @param proof          Proof json
 	 {     {
-	 *         "requested": {
+	 *         "requested_proof": {
 	 *             "revealed_attrs": {
 	 *                 "requested_attr1_id": {sub_proof_index: number, raw: string, encoded: string},
 	 *                 "requested_attr4_id": {sub_proof_index: number: string, encoded: string},

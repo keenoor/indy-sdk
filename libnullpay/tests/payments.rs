@@ -3,6 +3,7 @@ extern crate serde_derive;
 extern crate serde_json;
 extern crate serde;
 extern crate nullpay;
+extern crate indyrs as indy;
 
 #[macro_use]
 extern crate lazy_static;
@@ -20,7 +21,7 @@ use utils::types::*;
 use utils::ledger;
 use utils::pool;
 use utils::did;
-use nullpay::ErrorCode;
+use indy::ErrorCode;
 
 use std::collections::HashMap;
 
@@ -373,7 +374,7 @@ mod high_cases {
             let nym_resp = ledger::sign_and_submit_request(pool_handle, wallet_handle, trustee_did.as_str(), nym_req_with_fees.as_str()).unwrap();
             let nym_resp_parsed_err = payments::parse_response_with_fees(payment_method.as_str(), nym_resp.as_str()).unwrap_err();
 
-            assert_eq!(nym_resp_parsed_err, ErrorCode::PaymentInsufficientFundsError);
+            assert_eq!(nym_resp_parsed_err.error_code, ErrorCode::PaymentInsufficientFundsError);
 
             pool::close(pool_handle).unwrap();
             wallet::close_wallet(wallet_handle).unwrap();
@@ -422,7 +423,7 @@ mod high_cases {
             let (nym_req_with_fees_2, payment_method) = payments::add_request_fees(wallet_handle, SUBMITTER_DID, nym_req_2.as_str(), inputs.as_str(), outputs.as_str(), None).unwrap();
             let nym_resp_2 = ledger::sign_and_submit_request(pool_handle, wallet_handle, trustee_did.as_str(), nym_req_with_fees_2.as_str()).unwrap();
             let ec = payments::parse_response_with_fees(payment_method.as_str(), nym_resp_2.as_str()).unwrap_err();
-            assert_eq!(ec, ErrorCode::PaymentSourceDoesNotExistError);
+            assert_eq!(ec.error_code, ErrorCode::PaymentSourceDoesNotExistError);
 
             pool::close(pool_handle).unwrap();
             wallet::close_wallet(wallet_handle).unwrap();
@@ -470,7 +471,7 @@ mod high_cases {
 
             //8. Add fees to request by using other wallet
             let res = payments::add_request_fees(wallet_handle_2, my_did.as_str(), nym_req.as_str(), inputs.as_str(), outputs.as_str(), None);
-            assert_eq!(res.unwrap_err(), ErrorCode::CommonInvalidState);
+            assert_eq!(res.unwrap_err().error_code, ErrorCode::CommonInvalidState);
 
             pool::close(pool_handle).unwrap();
             wallet::close_wallet(wallet_handle_1).unwrap();
@@ -635,7 +636,7 @@ mod high_cases {
             let (payment_req, payment_method) = payments::build_payment_req(wallet_handle, SUBMITTER_DID, inputs.as_str(), outputs.as_str(), None).unwrap();
             let payment_resp = ledger::submit_request(pool_handle, payment_req.as_str()).unwrap();
             let payment_err = payments::parse_payment_response(payment_method.as_str(), payment_resp.as_str()).unwrap_err();
-            assert_eq!(payment_err, ErrorCode::PaymentInsufficientFundsError);
+            assert_eq!(payment_err.error_code, ErrorCode::PaymentInsufficientFundsError);
 
             let sources_after = payments_utils::get_sources_with_balance(addresses.clone(), wallet_handle, pool_handle, SUBMITTER_DID);
             assert_eq!(sources, sources_after);
@@ -680,7 +681,7 @@ mod high_cases {
             let payment_resp = ledger::submit_request(pool_handle, payment_req.as_str()).unwrap();
             let ec = payments::parse_payment_response(payment_method.as_str(), payment_resp.as_str()).unwrap_err();
 
-            assert_eq!(ec, ErrorCode::PaymentSourceDoesNotExistError);
+            assert_eq!(ec.error_code, ErrorCode::PaymentSourceDoesNotExistError);
 
             pool::close(pool_handle).unwrap();
             wallet::close_wallet(wallet_handle).unwrap();
@@ -717,7 +718,7 @@ mod high_cases {
 
             //4. Build and send payment txn
             let res = payments::build_payment_req(wallet_handle_2, SUBMITTER_DID, inputs.as_str(), outputs.as_str(), None);
-            assert_eq!(res.unwrap_err(), ErrorCode::CommonInvalidState);
+            assert_eq!(res.unwrap_err().error_code, ErrorCode::CommonInvalidState);
 
             pool::close(pool_handle).unwrap();
             wallet::close_wallet(wallet_handle).unwrap();
@@ -896,7 +897,7 @@ mod medium_cases {
             let outputs = serde_json::to_string(&outputs).unwrap();
 
             let nym_req_err = payments::add_request_fees(wallet_handle, SUBMITTER_DID, EMPTY_OBJECT, inputs.as_str(), outputs.as_str(), None).unwrap_err();
-            assert_eq!(nym_req_err, ErrorCode::CommonInvalidStructure);
+            assert_eq!(nym_req_err.error_code, ErrorCode::CommonInvalidStructure);
 
             //IMPORTANT: check that source cache stays the same
             let sources_after = payments_utils::get_sources_with_balance(addresses.clone(), wallet_handle, pool_handle, SUBMITTER_DID);
@@ -936,7 +937,7 @@ mod medium_cases {
             let outputs = serde_json::to_string(&outputs).unwrap();
 
             let nym_req_err = payments::add_request_fees(wallet_handle, SUBMITTER_DID, r#"{"reqId": 111}"#, inputs.as_str(), outputs.as_str(), None).unwrap_err();
-            assert_eq!(nym_req_err, ErrorCode::CommonInvalidStructure);
+            assert_eq!(nym_req_err.error_code, ErrorCode::CommonInvalidStructure);
 
             //IMPORTANT: check that source cache stays the same
             let sources_after = payments_utils::get_sources_with_balance(addresses.clone(), wallet_handle, pool_handle, SUBMITTER_DID);
@@ -959,7 +960,7 @@ mod medium_cases {
             let pool_handle = pool::create_and_open_pool_ledger(POOL_NAME).unwrap();
 
             let err = payments::build_set_txn_fees_req(wallet_handle, SUBMITTER_DID, PAYMENT_METHOD_NAME, "{1}").unwrap_err();
-            assert_eq!(err, ErrorCode::CommonInvalidStructure);
+            assert_eq!(err.error_code, ErrorCode::CommonInvalidStructure);
 
             pool::close(pool_handle).unwrap();
             wallet::close_wallet(wallet_handle).unwrap();
@@ -982,7 +983,31 @@ mod medium_cases {
             let (verify_txn_json, payment_method) = payments::build_verify_payment_req(wallet_handle, SUBMITTER_DID, receipt).unwrap();
             let verify_txn_resp = ledger::submit_request(pool_handle, verify_txn_json.as_str()).unwrap();
             let res = payments::parse_verify_payment_response(payment_method.as_str(), verify_txn_resp.as_str());
-            assert_eq!(res.unwrap_err(), ErrorCode::PaymentSourceDoesNotExistError);
+            assert_eq!(res.unwrap_err().error_code, ErrorCode::PaymentSourceDoesNotExistError);
+
+            pool::close(pool_handle).unwrap();
+            wallet::close_wallet(wallet_handle).unwrap();
+            test_utils::tear_down();
+        }
+    }
+
+    mod parse_payment_response {
+        use super::*;
+
+        #[test]
+        pub fn parse_response_with_fees_works_for_response_without_fees() {
+            test_utils::setup();
+            plugin::init_plugin();
+            let wallet_handle = wallet::create_and_open_wallet().unwrap();
+            let pool_handle = pool::create_and_open_pool_ledger(POOL_NAME).unwrap();
+
+            let (trustee_did, _) = did::create_and_store_my_did(wallet_handle, Some(TRUSTEE_SEED)).unwrap();
+            let (my_did, my_vk) = did::create_and_store_my_did(wallet_handle, None).unwrap();
+            let nym_req = ledger::build_nym_request(&trustee_did, &my_did, &my_vk, "aaa", "TRUSTEE").unwrap();
+
+            let response = ledger::sign_and_submit_request(pool_handle, wallet_handle, &trustee_did, &nym_req).unwrap();
+            let parsed_response = payments::parse_payment_response(PAYMENT_METHOD_NAME, response.as_str()).unwrap();
+            assert_eq!("{}", parsed_response);
 
             pool::close(pool_handle).unwrap();
             wallet::close_wallet(wallet_handle).unwrap();

@@ -1,11 +1,10 @@
 extern crate libc;
 
-use api::ErrorCode;
+use api::{ErrorCode, CommandHandle, WalletHandle, SearchHandle};
 use commands::{Command, CommandExecutor};
 use commands::non_secrets::NonSecretsCommand;
 use domain::wallet::Tags;
-use errors::common::CommonError;
-use errors::ToErrorCode;
+use errors::prelude::*;
 use utils::ctypes;
 
 use serde_json;
@@ -31,13 +30,13 @@ use self::libc::c_char;
 ///   usage of this tag in complex search queries (comparison, predicates)
 ///   Encrypted tags can be searched only for exact matching
 #[no_mangle]
-pub extern fn indy_add_wallet_record(command_handle: i32,
-                                     wallet_handle: i32,
+pub extern fn indy_add_wallet_record(command_handle: CommandHandle,
+                                     wallet_handle: WalletHandle,
                                      type_: *const c_char,
                                      id: *const c_char,
                                      value: *const c_char,
                                      tags_json: *const c_char,
-                                     cb: Option<extern fn(command_handle_: i32, err: ErrorCode)>) -> ErrorCode {
+                                     cb: Option<extern fn(command_handle_: CommandHandle, err: ErrorCode)>) -> ErrorCode {
     trace!("indy_add_wallet_record: >>> wallet_handle: {:?}, type_: {:?}, id: {:?}, value: {:?}, tags_json: {:?}", wallet_handle, type_, id, value, tags_json);
 
     check_useful_c_str!(type_, ErrorCode::CommonInvalidParam3);
@@ -57,13 +56,13 @@ pub extern fn indy_add_wallet_record(command_handle: i32,
                 value,
                 tags_json,
                 Box::new(move |result| {
-                    let err = result_to_err_code!(result);
+                    let err = prepare_result!(result);
                     trace!("indy_add_wallet_record:");
                     cb(command_handle, err)
                 })
             )));
 
-    let res = result_to_err_code!(result);
+    let res = prepare_result!(result);
 
     trace!("indy_add_wallet_record: <<< res: {:?}", res);
 
@@ -79,12 +78,12 @@ pub extern fn indy_add_wallet_record(command_handle: i32,
 /// id: the id of record
 /// value: the new value of record
 #[no_mangle]
-pub extern fn indy_update_wallet_record_value(command_handle: i32,
-                                              wallet_handle: i32,
+pub extern fn indy_update_wallet_record_value(command_handle: CommandHandle,
+                                              wallet_handle: WalletHandle,
                                               type_: *const c_char,
                                               id: *const c_char,
                                               value: *const c_char,
-                                              cb: Option<extern fn(command_handle_: i32, err: ErrorCode)>) -> ErrorCode {
+                                              cb: Option<extern fn(command_handle_: CommandHandle, err: ErrorCode)>) -> ErrorCode {
     trace!("indy_update_wallet_record_value: >>> wallet_handle: {:?}, type_: {:?}, id: {:?}, value: {:?}", wallet_handle, type_, id, value);
 
     check_useful_c_str!(type_, ErrorCode::CommonInvalidParam3);
@@ -102,13 +101,13 @@ pub extern fn indy_update_wallet_record_value(command_handle: i32,
                 id,
                 value,
                 Box::new(move |result| {
-                    let err = result_to_err_code!(result);
+                    let err = prepare_result!(result);
                     trace!("indy_update_wallet_record_value:");
                     cb(command_handle, err)
                 })
             )));
 
-    let res = result_to_err_code!(result);
+    let res = prepare_result!(result);
 
     trace!("indy_update_wallet_record_value: <<< res: {:?}", res);
 
@@ -133,12 +132,12 @@ pub extern fn indy_update_wallet_record_value(command_handle: i32,
 ///   usage of this tag in complex search queries (comparison, predicates)
 ///   Encrypted tags can be searched only for exact matching
 #[no_mangle]
-pub extern fn indy_update_wallet_record_tags(command_handle: i32,
-                                             wallet_handle: i32,
+pub extern fn indy_update_wallet_record_tags(command_handle: CommandHandle,
+                                             wallet_handle: WalletHandle,
                                              type_: *const c_char,
                                              id: *const c_char,
                                              tags_json: *const c_char,
-                                             cb: Option<extern fn(command_handle_: i32, err: ErrorCode)>) -> ErrorCode {
+                                             cb: Option<extern fn(command_handle_: CommandHandle, err: ErrorCode)>) -> ErrorCode {
     trace!("indy_update_wallet_record_tags: >>> wallet_handle: {:?}, type_: {:?}, id: {:?}, tags_json: {:?}", wallet_handle, type_, id, tags_json);
 
     check_useful_c_str!(type_, ErrorCode::CommonInvalidParam3);
@@ -156,13 +155,13 @@ pub extern fn indy_update_wallet_record_tags(command_handle: i32,
                 id,
                 tags_json,
                 Box::new(move |result| {
-                    let err = result_to_err_code!(result);
+                    let err = prepare_result!(result);
                     trace!("indy_update_wallet_record_tags:");
                     cb(command_handle, err)
                 })
             )));
 
-    let res = result_to_err_code!(result);
+    let res = prepare_result!(result);
 
     trace!("indy_update_wallet_record_tags: <<< res: {:?}", res);
 
@@ -189,12 +188,12 @@ pub extern fn indy_update_wallet_record_tags(command_handle: i32,
 ///   Note if some from provided tags already assigned to the record than
 ///     corresponding tags values will be replaced
 #[no_mangle]
-pub extern fn indy_add_wallet_record_tags(command_handle: i32,
-                                          wallet_handle: i32,
+pub extern fn indy_add_wallet_record_tags(command_handle: CommandHandle,
+                                          wallet_handle: WalletHandle,
                                           type_: *const c_char,
                                           id: *const c_char,
                                           tags_json: *const c_char,
-                                          cb: Option<extern fn(command_handle_: i32, err: ErrorCode)>) -> ErrorCode {
+                                          cb: Option<extern fn(command_handle_: CommandHandle, err: ErrorCode)>) -> ErrorCode {
     trace!("indy_add_wallet_record_tags: >>> wallet_handle: {:?}, type_: {:?}, id: {:?}, tags_json: {:?}", wallet_handle, type_, id, tags_json);
 
     check_useful_c_str!(type_, ErrorCode::CommonInvalidParam3);
@@ -212,13 +211,13 @@ pub extern fn indy_add_wallet_record_tags(command_handle: i32,
                 id,
                 tags_json,
                 Box::new(move |result| {
-                    let err = result_to_err_code!(result);
+                    let err = prepare_result!(result);
                     trace!("indy_add_wallet_record_tags:");
                     cb(command_handle, err)
                 })
             )));
 
-    let res = result_to_err_code!(result);
+    let res = prepare_result!(result);
 
     trace!("indy_add_wallet_record_tags: <<< res: {:?}", res);
 
@@ -235,12 +234,12 @@ pub extern fn indy_add_wallet_record_tags(command_handle: i32,
 /// tag_names_json: the list of tag names to remove from the record as json array:
 ///   ["tagName1", "tagName2", ...]
 #[no_mangle]
-pub extern fn indy_delete_wallet_record_tags(command_handle: i32,
-                                             wallet_handle: i32,
+pub extern fn indy_delete_wallet_record_tags(command_handle: CommandHandle,
+                                             wallet_handle: WalletHandle,
                                              type_: *const c_char,
                                              id: *const c_char,
                                              tag_names_json: *const c_char,
-                                             cb: Option<extern fn(command_handle_: i32, err: ErrorCode)>) -> ErrorCode {
+                                             cb: Option<extern fn(command_handle_: CommandHandle, err: ErrorCode)>) -> ErrorCode {
     trace!("indy_delete_wallet_record_tags: >>> wallet_handle: {:?}, type_: {:?}, id: {:?}, tag_names_json: {:?}", wallet_handle, type_, id, tag_names_json);
 
     check_useful_c_str!(type_, ErrorCode::CommonInvalidParam3);
@@ -258,13 +257,13 @@ pub extern fn indy_delete_wallet_record_tags(command_handle: i32,
                 id,
                 tag_names_json,
                 Box::new(move |result| {
-                    let err = result_to_err_code!(result);
+                    let err = prepare_result!(result);
                     trace!("indy_delete_wallet_record_tags:");
                     cb(command_handle, err)
                 })
             )));
 
-    let res = result_to_err_code!(result);
+    let res = prepare_result!(result);
 
     trace!("indy_delete_wallet_record_tags: <<< res: {:?}", res);
 
@@ -279,11 +278,11 @@ pub extern fn indy_delete_wallet_record_tags(command_handle: i32,
 /// type_: record type
 /// id: the id of record
 #[no_mangle]
-pub extern fn indy_delete_wallet_record(command_handle: i32,
-                                        wallet_handle: i32,
+pub extern fn indy_delete_wallet_record(command_handle: CommandHandle,
+                                        wallet_handle: WalletHandle,
                                         type_: *const c_char,
                                         id: *const c_char,
-                                        cb: Option<extern fn(command_handle_: i32, err: ErrorCode)>) -> ErrorCode {
+                                        cb: Option<extern fn(command_handle_: CommandHandle, err: ErrorCode)>) -> ErrorCode {
     trace!("indy_delete_wallet_record: >>> wallet_handle: {:?}, type_: {:?}, id: {:?}", wallet_handle, type_, id);
 
     check_useful_c_str!(type_, ErrorCode::CommonInvalidParam3);
@@ -299,13 +298,13 @@ pub extern fn indy_delete_wallet_record(command_handle: i32,
                 type_,
                 id,
                 Box::new(move |result| {
-                    let err = result_to_err_code!(result);
+                    let err = prepare_result!(result);
                     trace!("indy_delete_wallet_record:");
                     cb(command_handle, err)
                 })
             )));
 
-    let res = result_to_err_code!(result);
+    let res = prepare_result!(result);
 
     trace!("indy_delete_wallet_record: <<< res: {:?}", res);
 
@@ -334,12 +333,12 @@ pub extern fn indy_delete_wallet_record(command_handle: i32,
 ///   tags: <tags json>, // present only if retrieveTags set to true
 /// }
 #[no_mangle]
-pub  extern fn indy_get_wallet_record(command_handle: i32,
-                                      wallet_handle: i32,
+pub  extern fn indy_get_wallet_record(command_handle: CommandHandle,
+                                      wallet_handle: WalletHandle,
                                       type_: *const c_char,
                                       id: *const c_char,
                                       options_json: *const c_char,
-                                      cb: Option<extern fn(command_handle_: i32, err: ErrorCode,
+                                      cb: Option<extern fn(command_handle_: CommandHandle, err: ErrorCode,
                                                            record_json: *const c_char)>) -> ErrorCode {
     trace!("indy_get_wallet_record: >>> wallet_handle: {:?}, type_: {:?}, id: {:?}, options_json: {:?}", wallet_handle, type_, id, options_json);
 
@@ -358,14 +357,14 @@ pub  extern fn indy_get_wallet_record(command_handle: i32,
                 id,
                 options_json,
                 Box::new(move |result| {
-                    let (err, record_json) = result_to_err_code_1!(result, String::new());
+                    let (err, record_json) = prepare_result_1!(result, String::new());
                     trace!("indy_get_wallet_record: record_json: {:?}", record_json);
                     let record_json = ctypes::string_to_cstring(record_json);
                     cb(command_handle, err, record_json.as_ptr())
                 })
             )));
 
-    let res = result_to_err_code!(result);
+    let res = prepare_result!(result);
 
     trace!("indy_get_wallet_record: <<< res: {:?}", res);
 
@@ -401,13 +400,13 @@ pub  extern fn indy_get_wallet_record(command_handle: i32,
 /// search_handle: Wallet search handle that can be used later
 ///   to fetch records by small batches (with indy_fetch_wallet_search_next_records)
 #[no_mangle]
-pub  extern fn indy_open_wallet_search(command_handle: i32,
-                                       wallet_handle: i32,
+pub  extern fn indy_open_wallet_search(command_handle: CommandHandle,
+                                       wallet_handle: WalletHandle,
                                        type_: *const c_char,
                                        query_json: *const c_char,
                                        options_json: *const c_char,
-                                       cb: Option<extern fn(command_handle_: i32, err: ErrorCode,
-                                                            search_handle: i32)>) -> ErrorCode {
+                                       cb: Option<extern fn(command_handle_: CommandHandle, err: ErrorCode,
+                                                            search_handle: SearchHandle)>) -> ErrorCode {
     trace!("indy_open_wallet_search: >>> wallet_handle: {:?}, type_: {:?}, query_json: {:?}, options_json: {:?}", wallet_handle, type_, query_json, options_json);
 
     check_useful_c_str!(type_, ErrorCode::CommonInvalidParam3);
@@ -425,13 +424,13 @@ pub  extern fn indy_open_wallet_search(command_handle: i32,
                 query_json,
                 options_json,
                 Box::new(move |result| {
-                    let (err, handle) = result_to_err_code_1!(result, 0);
+                    let (err, handle) = prepare_result_1!(result, 0);
                     trace!("indy_open_wallet_search: handle: {:?}", handle);
                     cb(command_handle, err, handle)
                 })
             )));
 
-    let res = result_to_err_code!(result);
+    let res = prepare_result!(result);
 
     trace!("indy_open_wallet_search: <<< res: {:?}", res);
 
@@ -459,11 +458,11 @@ pub  extern fn indy_open_wallet_search(command_handle: i32,
 ///   }],
 /// }
 #[no_mangle]
-pub  extern fn indy_fetch_wallet_search_next_records(command_handle: i32,
-                                                     wallet_handle: i32,
-                                                     wallet_search_handle: i32,
+pub  extern fn indy_fetch_wallet_search_next_records(command_handle: CommandHandle,
+                                                     wallet_handle: WalletHandle,
+                                                     wallet_search_handle: SearchHandle,
                                                      count: usize,
-                                                     cb: Option<extern fn(command_handle_: i32, err: ErrorCode,
+                                                     cb: Option<extern fn(command_handle_: CommandHandle, err: ErrorCode,
                                                                           records_json: *const c_char)>) -> ErrorCode {
     trace!("indy_fetch_wallet_search_next_records: >>> wallet_handle: {:?}, wallet_search_handle: {:?}, count: {:?}", wallet_handle, wallet_search_handle, count);
 
@@ -478,14 +477,14 @@ pub  extern fn indy_fetch_wallet_search_next_records(command_handle: i32,
                 wallet_search_handle,
                 count,
                 Box::new(move |result| {
-                    let (err, records_json) = result_to_err_code_1!(result, String::new());
+                    let (err, records_json) = prepare_result_1!(result, String::new());
                     trace!("indy_fetch_wallet_search_next_records: records_json: {:?}", records_json);
                     let records_json = ctypes::string_to_cstring(records_json);
                     cb(command_handle, err, records_json.as_ptr())
                 })
             )));
 
-    let res = result_to_err_code!(result);
+    let res = prepare_result!(result);
 
     trace!("indy_fetch_wallet_search_next_records: <<< res: {:?}", res);
 
@@ -497,9 +496,9 @@ pub  extern fn indy_fetch_wallet_search_next_records(command_handle: i32,
 /// #Params
 /// wallet_search_handle: wallet search handle
 #[no_mangle]
-pub  extern fn indy_close_wallet_search(command_handle: i32,
-                                        wallet_search_handle: i32,
-                                        cb: Option<extern fn(command_handle_: i32, err: ErrorCode)>) -> ErrorCode {
+pub  extern fn indy_close_wallet_search(command_handle: CommandHandle,
+                                        wallet_search_handle: SearchHandle,
+                                        cb: Option<extern fn(command_handle_: CommandHandle, err: ErrorCode)>) -> ErrorCode {
     trace!("indy_close_wallet_search: >>> wallet_search_handle: {:?}", wallet_search_handle);
 
     check_useful_c_callback!(cb, ErrorCode::CommonInvalidParam5);
@@ -511,13 +510,13 @@ pub  extern fn indy_close_wallet_search(command_handle: i32,
             NonSecretsCommand::CloseSearch(
                 wallet_search_handle,
                 Box::new(move |result| {
-                    let err = result_to_err_code!(result);
+                    let err = prepare_result!(result);
                     trace!("indy_close_wallet_search:");
                     cb(command_handle, err)
                 })
             )));
 
-    let res = result_to_err_code!(result);
+    let res = prepare_result!(result);
 
     trace!("indy_close_wallet_search: <<< res: {:?}", res);
 
